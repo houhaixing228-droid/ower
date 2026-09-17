@@ -1,0 +1,45 @@
+version: "3.9"
+
+# 用真实 RabbitMQ 跑一遍完整流水线。
+#
+#     docker compose up --build
+#     docker compose logs -f demo
+#
+# RabbitMQ 管理台：http://127.0.0.1:15672  （guest / guest）
+# 在里面能看到 aipe.task.segment 的 x-max-priority=10，
+# 以及 x-death / DLQ 的堆积情况 —— 优先级调度的证据在这里是肉眼可见的。
+#
+# 注意：memory 模式不需要这个文件，直接 python run_pipeline.py 就能跑。
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: aipe-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+
+  demo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aipe-demo
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      AIPE_BROKER: rabbitmq
+      AIPE_RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/%2F
+      AIPE_LLM: mock
+      AIPE_DB_PATH: /tmp/aipe_demo.sqlite3
+    command: >
+      sh -c "python run_pipeline.py --broker rabbitmq --segments 200 --consumers 4 &&
+             python run_scheduling_demo.py --big 200 --small-count 10 --small-size 5 --latency-ms 2"

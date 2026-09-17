@@ -1,0 +1,8 @@
+# 核心演示零外部依赖：内存队列 + SQLite + 规则式 mock LLM 全部走标准库。
+# 下面两个是可选增强，按需要装。
+
+# AIPE_BROKER=rabbitmq 时需要（生产形态：优先级队列 / DLQ / 可见性超时）
+pika>=1.3.0
+
+# AIPE_LLM=openai 时需要（任何 OpenAI 兼容端点：vLLM / SGLang / 自建网关都能接）
+openai>=1.30.0
