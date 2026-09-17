@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 运行时数据
+*.sqlite3
+*.db
+
+# 本地环境变量（真值绝不入库，模板见 .env.example）
+.env
+.env.local
+
+# 测试产物
+_test_*.txt
+out.txt
+
+# 编辑器
+.idea/
+.vscode/
+*.swp
+.DS_Store
