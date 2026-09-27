@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -85,6 +86,56 @@ def test_citations_swap_in_the_doc_that_holds_the_amount(engine):
     retrieved = {"c1": [{"doc_id": "KB-021"}, {"doc_id": "KB-029"}, {"doc_id": "KB-022"}]}
 
     cites = engine._citations(plan, [], history=history, retrieved=retrieved)
+
+    assert [c["doc_id"] for c in cites] == ["KB-022"]
+    assert "8,600" in cites[0]["quote"]
+
+
+def test_value_citation_locates_the_orphan_number(engine):
+    """按“这个数在哪篇文档里”定位出处。
+
+    上面那条测试喂的候选只有三篇，KB-022 排在前面，所以“第一个写着金额的”就够了。
+    真实链路不是这样：模型这一轮检索了 4 次，KB-022 是它第 4 次自己写的
+    "Tasman 冷链 冷藏机组故障 赔付 CNY" 里排第 5 的结果，在 _retrieved_doc_ids
+    的顺序里落到第 11 位。而 KB-027（POS 故障报告，写着"常备零钱 500 元提高到
+    1,500 元"）排在它前面——“第一个写着金额的”会挑成 KB-027，照样对不上 8600。
+
+    所以要认的不是“哪篇有金额”，是“模型写出来的这个 8600 在哪篇里”。
+    """
+    doc = engine._value_citation_doc(
+        ["供应商后来赔了多少？"],
+        [
+            "KB-021", "KB-029", "KB-041", "KB-040", "KB-003", "KB-031",
+            "KB-015", "KB-001", "KB-033", "KB-027", "KB-022",
+        ],
+        wanted=[7.0, 4.0, 8600.0],
+    )
+    assert doc == "KB-022"
+
+
+def test_citations_use_the_answer_number_to_place_the_quote(engine):
+    """端到端按真实检索顺序走一遍：引用要落到 KB-022，quote 里要有 8,600。"""
+    question = "供应商后来赔了多少？"
+    plan = Plan(question=question, standalone=question, search_query=question)
+    history = [
+        {"question": "那停售期间让顾客换成什么？", "standalone": "那停售期间让顾客换成什么？",
+         "citations": [{"doc_id": "KB-021", "quote": "x"}]},
+    ]
+    retrieved = {
+        json.dumps({"query": "三文鱼 冷链 供应商 赔付 金额", "top_k": 5}): [
+            {"doc_id": "KB-021"}, {"doc_id": "KB-029"}, {"doc_id": "KB-041"},
+            {"doc_id": "KB-040"}, {"doc_id": "KB-003"},
+        ],
+        json.dumps({"query": "Tasman 冷链 冷藏机组故障 赔付 CNY", "top_k": 8}): [
+            {"doc_id": "KB-041"}, {"doc_id": "KB-033"}, {"doc_id": "KB-015"},
+            {"doc_id": "KB-027"}, {"doc_id": "KB-022"},
+        ],
+    }
+    answer = "供应商已按书面方案赔付到位，7 月 4 日那批三文鱼已销毁，赔偿金额为 8600 元。"
+
+    cites = engine._citations(
+        plan, [], history=history, retrieved=retrieved, answer=answer
+    )
 
     assert [c["doc_id"] for c in cites] == ["KB-022"]
     assert "8,600" in cites[0]["quote"]
