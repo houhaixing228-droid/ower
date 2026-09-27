@@ -143,9 +143,27 @@ details.evid pre {
   background: #f7f9fb; border: 1px solid var(--line); border-radius: 8px; padding: 8px;
   font-size: 11px; white-space: pre-wrap; overflow-x: auto;
 }
-.trace .hit { display: grid; grid-template-columns: 74px 1fr 70px; gap: 6px; padding: 3px 0; }
+.trace .hit { display: grid; grid-template-columns: 92px 1fr 64px; gap: 6px; padding: 3px 0; }
 .trace .hit .sc { text-align: right; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.trace .hit .doc { color: var(--ink); }
+/* 检索到 ≠ 用上了：最终被引用的那几片标绿加粗，一眼能看出"排第一的没被用"。 */
+.trace .hit.adopted { background: var(--brand-soft); border-radius: 4px; }
+.trace .hit.adopted .doc { color: var(--brand); font-weight: 600; }
 .trace .padded { color: var(--warn); }
+
+.trace-summary {
+  display: flex; flex-wrap: wrap; gap: 14px; padding: 6px 0 10px;
+  border-bottom: 1px solid var(--line); margin-bottom: 8px; color: var(--ink-soft);
+}
+.trace-summary b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.trace-summary .warn { color: var(--warn); }
+.trace .search-block { margin: 0 0 10px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
+.trace .search-head { color: var(--ink); }
+.trace .search-sub { color: var(--ink-soft); font-size: 11px; }
+.trace .filtered { color: var(--warn); margin-right: 8px; }
+.trace h4 {
+  font-size: 11px; margin: 8px 0 4px; color: var(--ink-soft); font-weight: 600;
+}
 
 .foot { padding: 10px 22px 24px; color: var(--ink-soft); font-size: 12px; }
 
