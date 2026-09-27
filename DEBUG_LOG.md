@@ -34,7 +34,7 @@ commit 可在历史里逐条对应；"红的证据"指该测试在修复提交�
   用 GBK 打开一个 txt 成功。
 - **根因**：`chunker.py` 最后一小块不满时被丢弃；`loader.py` 只按 UTF-8 解码。
 - **修复**：`724cb5a`（加载 txt/html/GBK，切块不再丢尾巴）。
-- **回归测试**：`test_kb.py`（红测 f17c7c0）。
+- **回归测试**：`test_kb_loading_rules.py`（红测 f17c7c0）。
 
 ## D4. 检索 top_k 先截断后过滤，doc_id 张冠李戴
 
@@ -66,7 +66,7 @@ commit 可在历史里逐条对应；"红的证据"指该测试在修复提交�
 - **验证**：两个 `session_id` 交替请求，观察 `/api/trace`，B 的 messages 里出现了 A 的提问。
 - **根因**：`sessions` 全局字典按"最新会话"取历史，没有按 id 隔离。
 - **修复**：`cae49b1`。
-- **回归测试**：`test_sessions.py`（红测 cf8319b）。
+- **回归测试**：`test_session_rules.py`（红测 cf8319b）。
 
 ## D7. SQLite 连接一次报错，整条线程永久变 500
 
