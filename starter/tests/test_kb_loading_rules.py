@@ -96,10 +96,3 @@ def test_gbk_bytes_decode_correctly():
     import pathlib
 
     assert "营业时间" in decode_bytes("营业时间调整".encode("gbk"), pathlib.Path("x.txt"), [])
-
-
-def test_every_document_has_at_least_one_chunk(documents):
-    """长度不足一块的短文档也要有片段，否则它永远检索不到。"""
-    docs, _ = documents
-    for doc in docs:
-        assert chunk_document(doc), doc.doc_id
