@@ -173,7 +173,7 @@ P14   保持连接的空行与 SSE 注释没有把服务弄坏                  
 | P5 | `max_tokens` 只出现过 `4096` 一个值 |
 | P7 | 44 个工具调用，44 个 `role: "tool"` + `tool_call_id` 回传，数量对得上 |
 | P9 | 12 个"模型不可用"场景下都是结构化 `refusal`，`answer` 从不是空串，也没有把失败的模型输出当回答 |
-| P10 | 18 个场景的思考标记（`RSN-…`）一次都没有出现在 `answer` / `citations` / `data_evidence` 里 |
+| P10 | 32 次回答里，思考标记（`RSN-…`）一次都没有出现在 `answer` / `citations` / `data_evidence` 里 |
 | P11 | 最慢是 `hang` 场景的 120.06 秒，仍在 180 秒时限内 |
 | P13 | 18 次多轮请求都原样回传了 `reasoning_content`，没有触发 400 |
 | P14 | `: keep-alive` 注释与正文前的空行都被跳过，`slow` 场景照常作答 |
