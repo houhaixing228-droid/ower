@@ -3,17 +3,22 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import date
+from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .service import Service
 
 app = FastAPI(title="经营看板 + 问答服务", version="0.9.3")
 _service: Optional[Service] = None
+#: 前端静态资源。目录不存在也不影响四个契约接口。
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
 
 def service() -> Service:
@@ -114,3 +119,69 @@ def data_quality() -> dict:
         "data_period": current.data_period,
         "kb_warnings": current.index.warnings,
     }
+
+
+# -- 看板用的辅助接口（契约之外，前端自己用） ----------------------------------
+
+
+@app.get("/api/catalog")
+def catalog() -> dict:
+    """门店与商品维表，供筛选下拉框使用。"""
+    current = service()
+    return {
+        "stores": current.tools.stores(),
+        "products": current.tools.products(),
+        "data_period": current.data_period,
+    }
+
+
+@app.get("/api/top_products")
+def top_products(
+    start: str = Query(...),
+    end: str = Query(...),
+    store_id: Optional[str] = None,
+    limit: int = Query(default=10, ge=1, le=50),
+):
+    bad = _bad_date(start, end)
+    return bad or service().tools.top_products(start, end, store_id, limit)
+
+
+@app.get("/api/payment_mix")
+def payment_mix(
+    start: str = Query(...),
+    end: str = Query(...),
+    store_id: Optional[str] = None,
+):
+    bad = _bad_date(start, end)
+    return bad or service().tools.payment_mix(start, end, store_id)
+
+
+@app.get("/api/by_store")
+def by_store(
+    start: str = Query(...),
+    end: str = Query(...),
+    product_id: Optional[str] = None,
+):
+    bad = _bad_date(start, end)
+    return bad or service().tools.by_store(start, end, product_id)
+
+
+@app.post("/api/maintenance/rebuild")
+def maintenance_rebuild() -> dict:
+    """不重启服务重建清洗表与检索索引。
+
+    现场往 `knowledge_base/` 里加一份文档之后，跑一次就能答相关问题，
+    不用停服务——第四关要的就是这个。
+    """
+    started = time.perf_counter()
+    current = service()
+    current.rebuild(only_if_missing=False)
+    return {
+        "ok": True,
+        "took_ms": round((time.perf_counter() - started) * 1000, 1),
+        "health": current.health(),
+    }
+
+
+if WEB_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")

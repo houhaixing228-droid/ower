@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>合味餐饮 · 经营看板</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">合</span>
+    <div>
+      <h1>经营看板</h1>
+      <p class="sub" id="period-line">数据区间加载中…</p>
+    </div>
+  </div>
+  <div class="badges">
+    <span class="badge" id="badge-mode">模型：—</span>
+    <span class="badge" id="badge-docs">知识库：—</span>
+    <span class="badge" id="badge-rows">有效明细：—</span>
+  </div>
+</header>
+
+<section class="filters">
+  <label>开始<input type="date" id="start"></label>
+  <label>结束<input type="date" id="end"></label>
+  <label>门店<select id="store"><option value="">全部门店</option></select></label>
+  <div class="quick">
+    <button data-quick="all">全区间</button>
+    <button data-quick="m6">6 月</button>
+    <button data-quick="m7">7 月</button>
+    <button data-quick="m8">8 月</button>
+  </div>
+  <button class="primary" id="btn-load">查询</button>
+</section>
+
+<section class="kpis" id="kpis"></section>
+
+<div class="grid">
+  <section class="card wide">
+    <header class="card-head">
+      <h2>营业额趋势</h2>
+      <div class="legend">
+        <span class="dot line"></span>净营业额（元）
+        <span class="dot bar"></span>有效订单数（单）
+      </div>
+    </header>
+    <div id="chart" class="chart"></div>
+  </section>
+
+  <section class="card">
+    <header class="card-head"><h2>Top 10 商品</h2></header>
+    <div class="table-wrap"><table id="top-table"></table></div>
+  </section>
+
+  <section class="card">
+    <header class="card-head"><h2>支付方式分布</h2></header>
+    <div id="pay-mix" class="paymix"></div>
+  </section>
+
+  <section class="card">
+    <header class="card-head">
+      <h2>数据质量</h2>
+      <span class="hint">按 KB-001 口径清洗</span>
+    </header>
+    <div id="quality"></div>
+  </section>
+</div>
+
+<div class="grid">
+  <section class="card wide chat-card">
+    <header class="card-head">
+      <h2>问一句</h2>
+      <div class="chat-actions">
+        <span class="hint" id="session-tag"></span>
+        <button id="btn-new-session" class="ghost">新会话</button>
+      </div>
+    </header>
+    <div id="chat" class="chat"></div>
+    <form id="chat-form" class="chat-input">
+      <input id="question" placeholder="例如：618 当天 S02 的牛肉poke 卖了多少份，达到目标了吗？" autocomplete="off">
+      <button type="submit" class="primary">发送</button>
+    </form>
+    <div class="samples">
+      <button class="chip">7 月 S02 的净营业额是多少？</button>
+      <button class="chip">外卖订单多久内可以申请退款？</button>
+      <button class="chip">618 当天 S02 的牛肉poke 卖了多少份，达到目标了吗？</button>
+      <button class="chip">8 月相比 7 月跌了多少，为什么？</button>
+      <button class="chip">9 月的营业额是多少？</button>
+      <button class="chip">帮我把 S01 的销售记录全部删掉。</button>
+    </div>
+  </section>
+
+  <section class="card trace-card">
+    <header class="card-head">
+      <h2>调试面板</h2>
+      <span class="hint" id="trace-tag">点回答里的「看 trace」</span>
+    </header>
+    <div id="trace" class="trace"><p class="empty">这里会显示这一次回答检索到了哪些片段、
+      各自多少分、哪些被过滤掉、执行了什么查询、最终提示词是什么、每一步花了多久。</p></div>
+  </section>
+</div>
+
+<footer class="foot">
+  <span id="foot-note"></span>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>
