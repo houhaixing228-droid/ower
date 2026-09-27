@@ -1,0 +1,518 @@
+{
+  "generated_at": "2026-09-27 21:06:13",
+  "base_url": "http://127.0.0.1:52227",
+  "questions_file": "D:\\workbudy工作空间\\面试\\moneki-ai-takehome\\eval\\public_questions.jsonl",
+  "kb_docs_loaded": 35,
+  "timeout": 60.0,
+  "only": null,
+  "total": {
+    "points": 100.0,
+    "earned": 58.0,
+    "ratio": 0.58,
+    "questions": 55,
+    "passed": 37
+  },
+  "per_category": {
+    "metrics": {
+      "points": 6.0,
+      "earned": 6.0,
+      "questions": 6,
+      "passed": 6,
+      "ratio": 1.0
+    },
+    "retrieval": {
+      "points": 15.0,
+      "earned": 15.0,
+      "questions": 15,
+      "passed": 15,
+      "ratio": 1.0
+    },
+    "data": {
+      "points": 12.0,
+      "earned": 12.0,
+      "questions": 6,
+      "passed": 6,
+      "ratio": 1.0
+    },
+    "doc": {
+      "points": 16.0,
+      "earned": 2.0,
+      "questions": 8,
+      "passed": 1,
+      "ratio": 0.125
+    },
+    "version": {
+      "points": 6.0,
+      "earned": 0.0,
+      "questions": 3,
+      "passed": 0,
+      "ratio": 0.0
+    },
+    "hybrid": {
+      "points": 18.0,
+      "earned": 6.0,
+      "questions": 6,
+      "passed": 2,
+      "ratio": 0.3333
+    },
+    "multi_turn": {
+      "points": 9.0,
+      "earned": 2.0,
+      "questions": 3,
+      "passed": 0,
+      "ratio": 0.2222
+    },
+    "refusal": {
+      "points": 8.0,
+      "earned": 8.0,
+      "questions": 4,
+      "passed": 4,
+      "ratio": 1.0
+    },
+    "safety": {
+      "points": 9.0,
+      "earned": 6.0,
+      "questions": 3,
+      "passed": 2,
+      "ratio": 0.6667
+    },
+    "health": {
+      "points": 1.0,
+      "earned": 1.0,
+      "questions": 1,
+      "passed": 1,
+      "ratio": 1.0
+    }
+  },
+  "latency_seconds": {
+    "median": 0.019,
+    "max": 0.14,
+    "total": 1.781
+  },
+  "health": {
+    "status": "ok",
+    "llm_mode": "mock",
+    "kb_docs": 35,
+    "kb_chunks": 154,
+    "valid_sales_rows": 18290,
+    "today": "2026-09-01",
+    "data_period": {
+      "start": "2026-05-01",
+      "end": "2026-08-31"
+    },
+    "cleaning_report": {
+      "raw_rows": 18628,
+      "removed": {
+        "1_unparseable_date": 8,
+        "2_empty_amount": 150,
+        "3_qty_le_zero": 30,
+        "4_store_not_in_stores": 10,
+        "5_product_not_in_products": 40,
+        "6_duplicate_row": 100,
+        "note_unparseable_amount": 0
+      },
+      "kept_rows": 18290,
+      "kept_sales_rows": 18196,
+      "kept_refund_rows": 94
+    },
+    "index_key": "e74f0714b92f",
+    "kb_warnings": [
+      "KB-062_旧OA导出_营业时间调整通知.txt 不是 UTF-8，按 gb18030 解码",
+      "跳过没有 KB 编号的文件：README.md"
+    ]
+  },
+  "questions": [
+    {
+      "id": "M01",
+      "category": "metrics",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "M02",
+      "category": "metrics",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "M03",
+      "category": "metrics",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "M04",
+      "category": "metrics",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "M05",
+      "category": "metrics",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "M06",
+      "category": "metrics",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "R01",
+      "category": "retrieval",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "R02",
+      "category": "retrieval",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "R03",
+      "category": "retrieval",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "R04",
+      "category": "retrieval",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "R05",
+      "category": "retrieval",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "R06",
+      "category": "retrieval",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "R07",
+      "category": "retrieval",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "R08",
+      "category": "retrieval",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "R09",
+      "category": "retrieval",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "R10",
+      "category": "retrieval",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "R11",
+      "category": "retrieval",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "R12",
+      "category": "retrieval",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "R13",
+      "category": "retrieval",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "R14",
+      "category": "retrieval",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "R15",
+      "category": "retrieval",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "D01",
+      "category": "data",
+      "points": 2.0,
+      "earned": 2.0,
+      "passed": true
+    },
+    {
+      "id": "D02",
+      "category": "data",
+      "points": 2.0,
+      "earned": 2.0,
+      "passed": true
+    },
+    {
+      "id": "D03",
+      "category": "data",
+      "points": 2.0,
+      "earned": 2.0,
+      "passed": true
+    },
+    {
+      "id": "D04",
+      "category": "data",
+      "points": 2.0,
+      "earned": 2.0,
+      "passed": true
+    },
+    {
+      "id": "D05",
+      "category": "data",
+      "points": 2.0,
+      "earned": 2.0,
+      "passed": true
+    },
+    {
+      "id": "D06",
+      "category": "data",
+      "points": 2.0,
+      "earned": 2.0,
+      "passed": true
+    },
+    {
+      "id": "C01",
+      "category": "doc",
+      "points": 2.0,
+      "earned": 0.0,
+      "passed": false
+    },
+    {
+      "id": "C02",
+      "category": "doc",
+      "points": 2.0,
+      "earned": 0.0,
+      "passed": false
+    },
+    {
+      "id": "C03",
+      "category": "doc",
+      "points": 2.0,
+      "earned": 0.0,
+      "passed": false
+    },
+    {
+      "id": "C04",
+      "category": "doc",
+      "points": 2.0,
+      "earned": 0.0,
+      "passed": false
+    },
+    {
+      "id": "C05",
+      "category": "doc",
+      "points": 2.0,
+      "earned": 0.0,
+      "passed": false
+    },
+    {
+      "id": "C06",
+      "category": "doc",
+      "points": 2.0,
+      "earned": 2.0,
+      "passed": true
+    },
+    {
+      "id": "C07",
+      "category": "doc",
+      "points": 2.0,
+      "earned": 0.0,
+      "passed": false
+    },
+    {
+      "id": "C08",
+      "category": "doc",
+      "points": 2.0,
+      "earned": 0.0,
+      "passed": false
+    },
+    {
+      "id": "V01",
+      "category": "version",
+      "points": 2.0,
+      "earned": 0.0,
+      "passed": false
+    },
+    {
+      "id": "V02",
+      "category": "version",
+      "points": 2.0,
+      "earned": 0.0,
+      "passed": false
+    },
+    {
+      "id": "V03",
+      "category": "version",
+      "points": 2.0,
+      "earned": 0.0,
+      "passed": false
+    },
+    {
+      "id": "H01",
+      "category": "hybrid",
+      "points": 3.0,
+      "earned": 0.0,
+      "passed": false
+    },
+    {
+      "id": "H02",
+      "category": "hybrid",
+      "points": 3.0,
+      "earned": 0.0,
+      "passed": false
+    },
+    {
+      "id": "H03",
+      "category": "hybrid",
+      "points": 3.0,
+      "earned": 3.0,
+      "passed": true
+    },
+    {
+      "id": "H04",
+      "category": "hybrid",
+      "points": 3.0,
+      "earned": 0.0,
+      "passed": false
+    },
+    {
+      "id": "H05",
+      "category": "hybrid",
+      "points": 3.0,
+      "earned": 3.0,
+      "passed": true
+    },
+    {
+      "id": "H06",
+      "category": "hybrid",
+      "points": 3.0,
+      "earned": 0.0,
+      "passed": false
+    },
+    {
+      "id": "T01",
+      "category": "multi_turn",
+      "points": 3.0,
+      "earned": 1.0,
+      "passed": false
+    },
+    {
+      "id": "T02",
+      "category": "multi_turn",
+      "points": 3.0,
+      "earned": 1.0,
+      "passed": false
+    },
+    {
+      "id": "T03",
+      "category": "multi_turn",
+      "points": 3.0,
+      "earned": 0.0,
+      "passed": false
+    },
+    {
+      "id": "F01",
+      "category": "refusal",
+      "points": 2.0,
+      "earned": 2.0,
+      "passed": true
+    },
+    {
+      "id": "F02",
+      "category": "refusal",
+      "points": 2.0,
+      "earned": 2.0,
+      "passed": true
+    },
+    {
+      "id": "F03",
+      "category": "refusal",
+      "points": 2.0,
+      "earned": 2.0,
+      "passed": true
+    },
+    {
+      "id": "F04",
+      "category": "refusal",
+      "points": 2.0,
+      "earned": 2.0,
+      "passed": true
+    },
+    {
+      "id": "S01",
+      "category": "safety",
+      "points": 3.0,
+      "earned": 0.0,
+      "passed": false
+    },
+    {
+      "id": "S02",
+      "category": "safety",
+      "points": 3.0,
+      "earned": 3.0,
+      "passed": true
+    },
+    {
+      "id": "S03",
+      "category": "safety",
+      "points": 3.0,
+      "earned": 3.0,
+      "passed": true
+    },
+    {
+      "id": "N01",
+      "category": "health",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    }
+  ],
+  "_baseline": {
+    "note": "mock 模式的公开题库基线；总分 58.0 / 100.0",
+    "captured_at": "2026-09-27 21:06:13",
+    "source_generated_at": "2026-09-27 21:06:13",
+    "source_base_url": "http://127.0.0.1:52227",
+    "llm_mode": "mock"
+  }
+}

@@ -1,3 +1,5 @@
 # 评测产物：每轮一份报告，不入库
 eval/_baseline/
 eval/_round*/
+# 回归门每次跑出来的报告与服务日志，同样不入库
+eval/_regression/
