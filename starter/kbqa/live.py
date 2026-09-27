@@ -523,7 +523,14 @@ class LiveEngine:
     def _locate_number(
         self, wanted: Optional[list[float]], doc_ids: list[str], kinds: list[str]
     ) -> Optional[str]:
-        """模型写出来的数，哪篇文档里有。
+        """`_locate_number_owner` 只要文档编号的那一半，给换文档用。"""
+        owner = self._locate_number_owner(wanted, doc_ids, kinds)
+        return owner[1] if owner else None
+
+    def _locate_number_owner(
+        self, wanted: Optional[list[float]], doc_ids: list[str], kinds: list[str]
+    ) -> Optional[tuple[float, str]]:
+        """模型写出来的数，哪篇文档里有。返回 (那个数, 文档编号)。
 
         认的条件两条，缺一不可：
         * 这个数在候选文档里只出现一次。出现两次以上说明它只是个普通数字
@@ -533,6 +540,9 @@ class LiveEngine:
 
         同时满足的取绝对值最大的那个：金额、份数这类关键事实通常比年月日大得多。
         年份直接不认：它是时间本身，不是"答出来的数"。
+
+        返回数值而不是只返回编号，是因为调用方要区分"这一篇是不是已经在引用列表里"——
+        已经在里面的不能再换（会丢掉模型另外几篇正确的引用），只需要给它 value 兜底。
         """
         if not wanted or not doc_ids:
             return None
@@ -556,7 +566,7 @@ class LiveEngine:
                 continue
             if best is None or abs(value) > abs(best[0]):
                 best = (value, doc_id)
-        return best[1] if best else None
+        return best
 
     def _carries_value(self, doc_id: str, kinds: list[str]) -> bool:
         """这篇文档里有没有一句写着问句要的那种数值。"""
@@ -590,13 +600,23 @@ class LiveEngine:
         if not doc_ids:
             doc_ids = self._citation_fallback(plan, history)
         if wants_value and retrieved:
-            # 要数值的问题，手上这些文档里一句带数值的都没有时，换一篇来引。
-            # T02 第 3 轮"供应商后来赔了多少"：继承上一轮的是停售通知 KB-021，
-            # 里面只写了"详见供应商邮件 KB-022"，没有金额；钱在 KB-022 里。
-            # 不换的话，写着 8,600 的那句会因为出处不在允许清单里被数字核对删掉。
+            candidates = _retrieved_doc_ids(retrieved)
+            # 先认"模型写出来的这个数到底出自哪一篇"。两类情况分开处理：
+            #
+            # 二、它标对了，但那篇挑不出句子（round8 T02 第 3 轮）：KB-022 是英文邮件、
+            #     问题是中文，`facts.rank` 两种模式都返回 []，于是这一篇在生成引用时
+            #     被静默丢掉，8600 跟着变成"不在允许清单里"的幻觉，被数字核对删掉。
+            #     所以只要这个数确实出自这一篇，就把它标成 value_doc、给它 value 兜底，
+            #     跟"它是不是刚刚被换进来的"无关。
+            owner = self._locate_number_owner(_numbers_in(answer), candidates, kinds)
+            if owner:
+                value_doc = owner[1]
+            # 一、它没标出处，继承来的文档里又没有金额（T02 早期那一版）：
+            #     继承的是停售通知 KB-021，里面只写"详见供应商邮件 KB-022"，
+            #     钱在 KB-022 里——那就按相关度另挑一篇来引。
             if not any(self._carries_value(doc_id, kinds) for doc_id in doc_ids):
                 picked = self._value_citation_doc(
-                    queries, _retrieved_doc_ids(retrieved), _numbers_in(answer)
+                    queries, candidates, _numbers_in(answer)
                 )
                 if picked:
                     doc_ids = [picked]
