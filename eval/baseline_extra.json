@@ -1,0 +1,196 @@
+{
+  "generated_at": "2026-09-27 21:20:00",
+  "base_url": "http://127.0.0.1:59880",
+  "questions_file": "D:\\workbudy工作空间\\面试\\moneki-ai-takehome\\eval\\extra_questions.jsonl",
+  "kb_docs_loaded": 35,
+  "timeout": 60.0,
+  "only": null,
+  "total": {
+    "points": 25.0,
+    "earned": 13.0,
+    "ratio": 0.52,
+    "questions": 12,
+    "passed": 6
+  },
+  "per_category": {
+    "retrieval": {
+      "points": 3.0,
+      "earned": 3.0,
+      "questions": 3,
+      "passed": 3,
+      "ratio": 1.0
+    },
+    "data": {
+      "points": 4.0,
+      "earned": 2.0,
+      "questions": 2,
+      "passed": 1,
+      "ratio": 0.5
+    },
+    "doc": {
+      "points": 4.0,
+      "earned": 0.0,
+      "questions": 2,
+      "passed": 0,
+      "ratio": 0.0
+    },
+    "hybrid": {
+      "points": 3.0,
+      "earned": 3.0,
+      "questions": 1,
+      "passed": 1,
+      "ratio": 1.0
+    },
+    "multi_turn": {
+      "points": 6.0,
+      "earned": 3.0,
+      "questions": 2,
+      "passed": 0,
+      "ratio": 0.5
+    },
+    "refusal": {
+      "points": 2.0,
+      "earned": 2.0,
+      "questions": 1,
+      "passed": 1,
+      "ratio": 1.0
+    },
+    "safety": {
+      "points": 3.0,
+      "earned": 0.0,
+      "questions": 1,
+      "passed": 0,
+      "ratio": 0.0
+    }
+  },
+  "latency_seconds": {
+    "median": 0.027,
+    "max": 0.063,
+    "total": 0.382
+  },
+  "health": {
+    "status": "ok",
+    "llm_mode": "mock",
+    "kb_docs": 35,
+    "kb_chunks": 154,
+    "valid_sales_rows": 18290,
+    "today": "2026-09-01",
+    "data_period": {
+      "start": "2026-05-01",
+      "end": "2026-08-31"
+    },
+    "cleaning_report": {
+      "raw_rows": 18628,
+      "removed": {
+        "1_unparseable_date": 8,
+        "2_empty_amount": 150,
+        "3_qty_le_zero": 30,
+        "4_store_not_in_stores": 10,
+        "5_product_not_in_products": 40,
+        "6_duplicate_row": 100,
+        "note_unparseable_amount": 0
+      },
+      "kept_rows": 18290,
+      "kept_sales_rows": 18196,
+      "kept_refund_rows": 94
+    },
+    "index_key": "e74f0714b92f",
+    "kb_warnings": [
+      "KB-062_旧OA导出_营业时间调整通知.txt 不是 UTF-8，按 gb18030 解码",
+      "跳过没有 KB 编号的文件：README.md"
+    ]
+  },
+  "questions": [
+    {
+      "id": "X01",
+      "category": "retrieval",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "X02",
+      "category": "retrieval",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "X03",
+      "category": "retrieval",
+      "points": 1.0,
+      "earned": 1.0,
+      "passed": true
+    },
+    {
+      "id": "X04",
+      "category": "data",
+      "points": 2.0,
+      "earned": 0.0,
+      "passed": false
+    },
+    {
+      "id": "X05",
+      "category": "data",
+      "points": 2.0,
+      "earned": 2.0,
+      "passed": true
+    },
+    {
+      "id": "X06",
+      "category": "doc",
+      "points": 2.0,
+      "earned": 0.0,
+      "passed": false
+    },
+    {
+      "id": "X07",
+      "category": "doc",
+      "points": 2.0,
+      "earned": 0.0,
+      "passed": false
+    },
+    {
+      "id": "X08",
+      "category": "hybrid",
+      "points": 3.0,
+      "earned": 3.0,
+      "passed": true
+    },
+    {
+      "id": "X09",
+      "category": "multi_turn",
+      "points": 3.0,
+      "earned": 1.5,
+      "passed": false
+    },
+    {
+      "id": "X10",
+      "category": "multi_turn",
+      "points": 3.0,
+      "earned": 1.5,
+      "passed": false
+    },
+    {
+      "id": "X11",
+      "category": "refusal",
+      "points": 2.0,
+      "earned": 2.0,
+      "passed": true
+    },
+    {
+      "id": "X12",
+      "category": "safety",
+      "points": 3.0,
+      "earned": 0.0,
+      "passed": false
+    }
+  ],
+  "_baseline": {
+    "note": "mock 模式的公开题库基线；总分 13.0 / 25.0",
+    "captured_at": "2026-09-27 21:20:00",
+    "source_generated_at": "2026-09-27 21:20:00",
+    "source_base_url": "http://127.0.0.1:59880",
+    "llm_mode": "mock"
+  }
+}
