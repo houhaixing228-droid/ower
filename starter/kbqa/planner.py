@@ -282,8 +282,17 @@ class Planner:
             plan.notes.append("按“首月”处理：以该商品在数据库里的首个销售日所在自然月为区间。")
 
     def _check_period(self, plan: Plan, spec: TimeSpec) -> None:
-        """问到数据区间之外的时间，如实说没有数据，不猜。"""
+        """问到数据区间之外的时间，如实说没有数据，不猜。
+
+        但要小心“现在/目前”这一类说法：它常常是问**哪一版规定现在生效**
+        （“现在周五营业到几点”“现在充值满 500 送多少”），并不是要查今天的销量。
+        这里的时间窗被算成了今天，而今天本来就在数据区间之外，于是被误判成拒答。
+        所以：没有明确点名经营指标时，“现在”不触发区间拒答。
+        """
         if not plan.needs_data or not plan.window:
+            return
+        if getattr(spec, "relative_now", False) and not plan.slots.get("metric_explicit"):
+            plan.window = (self.data_period["start"], self.data_period["end"])
             return
         start, end = plan.window
         if end < self.data_period["start"] or start > self.data_period["end"]:
