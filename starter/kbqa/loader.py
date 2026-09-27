@@ -70,6 +70,10 @@ class Document:
             "doc_id": self.doc_id,
             "title": self.title,
             "type": self.doc_type,
+            # 字段名必须与消费方一致：retriever 与 docfacts 读的是 `status`。
+            # 之前这里写成了 `state`，于是“本版本已废止”的过滤条件永远取不到值，
+            # 旧版本照样出现在 top-k 里（"state" 一并保留，避免别的调用方踩空）。
+            "status": self.status,
             "state": self.status,
             "effective_from": self.effective_from.isoformat() if self.effective_from else None,
             "superseded_by": self.superseded_by,

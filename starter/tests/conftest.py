@@ -1,7 +1,10 @@
 """测试夹具。
 
-检索这块在测试里整个换成固定返回，这样测试就不用跟着知识库一起改，
-跑起来也快。要看真实检索效果直接起服务问两句就行。
+原来的写法在 session 级把 `Retriever.search` 换成假实现，并且从不还原：
+这个替身会污染同一次 pytest 会话里后续的所有测试，
+于是任何关于真实检索的断言都不可能失败——这也是“自带测试全绿”的一部分原因。
+
+这里改成用 `monkeypatch` 逐测试打补丁，pytest 会在每个用例结束后自动还原。
 """
 
 from __future__ import annotations
@@ -18,8 +21,8 @@ sys.path.insert(0, str(ROOT))
 FAKE_TEXT = "退款政策 v2 > 三、时限：外卖订单在订单送达后 24 小时内可以申请退款。"
 
 
-@pytest.fixture(scope="session")
-def client(tmp_path_factory):
+@pytest.fixture()
+def client(monkeypatch, tmp_path_factory):
     os.environ["VAR_DIR"] = str(tmp_path_factory.mktemp("var"))
     for key in ("LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL"):
         os.environ.pop(key, None)
@@ -47,5 +50,5 @@ def client(tmp_path_factory):
             coverage=1.0,
         )
 
-    retriever_module.Retriever.search = fake_search
+    monkeypatch.setattr(retriever_module.Retriever, "search", fake_search)
     return TestClient(server.app)

@@ -67,7 +67,9 @@ class Service:
         return {
             "status": "ok",
             "llm_mode": self.settings.llm_mode,
-            "kb_docs": sum(1 for path in self.settings.kb_dir.rglob("*") if path.is_file()),
+            # 契约 §1：kb_docs 数的是进了索引的文档，不是目录里的文件。
+            # `knowledge_base/` 里有没有 KB 编号的说明文件（README.md），数文件会多报。
+            "kb_docs": len(self.index.docs_meta),
             "kb_chunks": len(self.index.chunks),
             "valid_sales_rows": self.tools.valid_sales_rows(),
             "today": self.settings.today.isoformat(),

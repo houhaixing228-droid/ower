@@ -20,10 +20,36 @@ K1 = 1.5
 B = 0.75
 
 
+def _kb_fingerprint(kb_dir: Path) -> str:
+    """把知识库里每个文件的路径与内容哈希拼成一个指纹。
+
+    前同事提交的那份 `.cache/index.json` 之所以危险，就是因为键只看代码版本号：
+    换掉 `knowledge_base/` 之后 rebuild 会以为缓存有效，直接返回上一份文档的索引。
+    评审流程明确会替换这个目录（契约 §8），所以这里必须看内容。
+    """
+    digest = hashlib.sha256()
+    try:
+        paths = sorted(
+            path for path in kb_dir.rglob("*") if path.is_file() and not path.name.startswith(".")
+        )
+    except OSError:  # pragma: no cover - 目录不可读时按“内容未知”处理
+        paths = []
+    for path in paths:
+        digest.update(path.relative_to(kb_dir).as_posix().encode("utf-8"))
+        digest.update(b"\x00")
+        try:
+            digest.update(hashlib.sha256(path.read_bytes()).hexdigest().encode("ascii"))
+        except OSError:  # pragma: no cover
+            digest.update(b"unreadable")
+        digest.update(b"\x00")
+    return digest.hexdigest()
+
+
 def content_key(kb_dir: Path) -> str:
-    """缓存键：三个版本号拼起来哈希一下。改了切块或分词，键就变，缓存自动失效。"""
+    """缓存键：代码版本号 + 知识库指纹。两者之一变了，缓存就失效。"""
     digest = hashlib.sha256()
     digest.update(("%s|%s|%s\n" % (INDEX_VERSION, CHUNKER_VERSION, TOKENIZER_VERSION)).encode())
+    digest.update(_kb_fingerprint(kb_dir).encode("ascii"))
     return digest.hexdigest()
 
 
