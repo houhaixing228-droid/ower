@@ -54,3 +54,44 @@ def client(monkeypatch, tmp_path_factory):
 
     monkeypatch.setattr(retriever_module.Retriever, "search", fake_search)
     return TestClient(server.app)
+
+
+@pytest.fixture(scope="module")
+def docs_engine(tmp_path_factory):
+    """只挂检索和文档取证两件事的 LiveEngine，用来单测引用怎么挑。
+
+    不经过模型：把 plan / doc_ids / history / retrieved 直接喂给 `_citations`，
+    看代码生成的引用落在哪一句上。跑的是真正的 data/pos.db 与 starter/kb。
+    """
+    from kbqa.cleaning import build_clean_db
+    from kbqa.config import load_settings
+    from kbqa.docfacts import DocFacts
+    from kbqa.entities import Catalog
+    from kbqa.index import load_index
+    from kbqa.live import LiveEngine
+    from kbqa.retriever import Retriever
+    from kbqa.tools import DataTools
+
+    settings = load_settings()
+    source = ROOT.parent / "data" / "pos.db"
+    if not source.exists():
+        pytest.skip("找不到 data/pos.db")
+    db = tmp_path_factory.mktemp("var") / "clean.db"
+    build_clean_db(source, db)
+    tools = DataTools(db)
+    index = load_index(settings.kb_dir, settings.index_path)
+
+    class _Answerer:
+        pass
+
+    answerer = _Answerer()
+    answerer.retriever = Retriever(index, settings.today)
+    answerer.facts = DocFacts(index)
+    answerer.catalog = Catalog(
+        stores=tools.stores(), products=tools.products(), aliases=index.aliases
+    )
+
+    built = LiveEngine.__new__(LiveEngine)
+    built.answerer = answerer
+    built.today = settings.today.isoformat()
+    return built
