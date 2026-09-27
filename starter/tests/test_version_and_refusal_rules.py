@@ -82,6 +82,36 @@ def test_superseded_doc_finds_predecessor():
     assert engine._superseded_doc("KB-023") == "KB-023"
 
 
+def test_citation_queries_fall_back_to_previous_question():
+    """追问本身没内容词（"那 6 月的时候呢？"），拿它去文档里挑句子挑不出来，
+    要能退回上一轮的完整问题当检索词。"""
+    engine = _engine_with({})
+    engine.today = "2026-09-01"
+
+    class _Plan:
+        standalone = "那 6 月的时候呢？"
+        question = "那 6 月的时候呢？"
+        search_query = "那 6 月的时候呢？"
+
+    history = [{"standalone": "储值充值现在的赠送规则是什么？", "question": "储值充值现在的赠送规则是什么？"}]
+    queries = engine._citation_queries(_Plan(), history)
+    assert queries[0] == "那 6 月的时候呢？"
+    assert "储值充值现在的赠送规则是什么？" in queries
+
+
+def test_citation_queries_keeps_full_question_alone():
+    """问句本身够具体时不要乱加东西。"""
+    engine = _engine_with({})
+    engine.today = "2026-09-01"
+
+    class _Plan:
+        standalone = "外卖订单多久内可以申请退款？"
+        question = "外卖订单多久内可以申请退款？"
+        search_query = "外卖订单多久内可以申请退款？"
+
+    assert engine._citation_queries(_Plan(), []) == ["外卖订单多久内可以申请退款？"]
+
+
 def test_wants_value_covers_target_questions():
     """问"达标了吗"就是在要数字，挑引用时要优先挑带数字的那句。"""
     assert _wants_value("冷萃乌龙茶上市第一个月的销量达标了吗？")
