@@ -2,11 +2,48 @@
 
 _wants_value 之前只有调用没有定义，跑的时候才炸，测试全绿照样上线——
 这类"定义在别处"的坑补个用例最省事。
+
+_raw tool call 那两条来自第六轮 H06：最后那一轮为了逼模型收尾不再给它工具，
+它就把工具调用当正文写了出来，一段标记原样当成答案返回，这一题直接 0 分。
 """
 
 from __future__ import annotations
 
-from kbqa.live import _compact_result, _wants_value
+from kbqa.live import (
+    _RAW_TOOL_CALL,
+    _compact_result,
+    _strip_raw_tool_calls,
+    _wants_value,
+)
+
+# 模型把工具调用当正文写出来时的样子，避开引号和尖括号以免和源码混在一起。
+RAW = "".join(
+    [
+        "<|DSML|> invoke name=",
+        "search_kb",
+        " parameter name=query: S02 停业通知",
+    ]
+)
+
+
+def test_raw_tool_call_is_detected():
+    assert _RAW_TOOL_CALL.search(RAW)
+    assert _RAW_TOOL_CALL.search('invoke name="daily_metrics"')
+    # 正常回答不能被误判
+    assert not _RAW_TOOL_CALL.search("8 月 3 日 S05 的现金支付占比是 100%。")
+
+
+def test_raw_tool_calls_are_stripped_from_answer():
+    text = "S02 那三天没有营业额。" + RAW + "补充说明。"
+    cleaned = _strip_raw_tool_calls(text)
+    assert "invoke" not in cleaned
+    assert "S02 那三天没有营业额。" in cleaned
+    assert "补充说明。" in cleaned
+
+
+def test_strip_leaves_normal_text_alone():
+    text = "外卖订单在送达后 24 小时内可以申请退款。"
+    assert _strip_raw_tool_calls(text) == text
 
 
 def test_wants_value_true():
@@ -34,7 +71,10 @@ def test_compact_result_keeps_short():
 
 
 def test_compact_result_prefers_asked_window():
-    days = [{"date": "2025-07-%02d" % day, "net_revenue": float(day), "orders": day} for day in range(1, 31)]
+    days = [
+        {"date": "2025-07-%02d" % day, "net_revenue": float(day), "orders": day}
+        for day in range(1, 31)
+    ]
 
     class _Plan:
         window = ("2025-07-10", "2025-07-12")
