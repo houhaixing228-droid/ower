@@ -364,6 +364,21 @@ class LiveEngine:
             return [self._superseded_doc(doc_id)]
         return [doc_id]
 
+    def _citation_queries(self, plan: Plan, history: Optional[list[dict]]) -> list[str]:
+        """挑引用时用来在文档里找句子的检索词，按优先级排好。
+
+        当前问句放第一。追问句往往短得没有内容词（"那 6 月的时候呢？"），
+        拿它去 rank 挑不出任何句子，引用就空了——所以把上一轮的完整问题
+        也排进候选，让调用方逐个试。
+        """
+        current = (plan.search_query or plan.standalone or plan.question or "").strip()
+        queries = [current] if current else []
+        if _is_vague_query(current) and history:
+            previous = (history[-1].get("standalone") or history[-1].get("question") or "").strip()
+            if previous and previous not in queries:
+                queries.append(previous)
+        return queries
+
     def _citations(self, plan: Plan, doc_ids: list[str], history: Optional[list[dict]] = None) -> list[dict]:
         """引用由代码生成：从模型点名的文档里挑最相关的一句原文，保证逐字可核对。
 
@@ -371,7 +386,6 @@ class LiveEngine:
         挑出来的句子会原样进 `quote`，而评测核对事实时会连 quote 一起看。
         挑不到带数字的再退回按相关度挑，不至于引不上有内容的原文。
         """
-        query = plan.search_query or plan.standalone
         wants_value = _wants_value(plan.standalone or plan.question)
         question = plan.standalone or plan.question
         if not doc_ids:
@@ -384,21 +398,31 @@ class LiveEngine:
             canonical = self._canonical_doc(doc_id, question)
             if canonical not in seen:
                 seen.append(canonical)
+        queries = self._citation_queries(plan, history)
         citations = []
         for doc_id in seen[:3]:
             if doc_id not in self.answerer.retriever.index.docs_meta:
                 continue
-            ranked = []
-            if wants_value:
-                ranked = self.answerer.facts.rank(query, doc_id, 1, require_value=True)
-            if not ranked:
-                ranked = self.answerer.facts.rank(query, doc_id, 1)
+            ranked = self._rank_citation(doc_id, queries, wants_value)
             if not ranked:
                 continue
             citation = self.answerer.facts.cite(doc_id, ranked[0][1].text)
             if citation:
                 citations.append(citation)
         return citations
+
+    def _rank_citation(self, doc_id: str, queries: list[str], wants_value: bool):
+        """按候选检索词逐个试，挑最先能挑出句子的那个。"""
+        facts = self.answerer.facts
+        for query in queries:
+            if wants_value:
+                ranked = facts.rank(query, doc_id, 1, require_value=True)
+                if ranked:
+                    return ranked
+            ranked = facts.rank(query, doc_id, 1)
+            if ranked:
+                return ranked
+        return []
 
     def _canonical_doc(self, doc_id: str, question: str) -> str:
         """把归档/已废止的文档换成同一主题的现行版本。
@@ -557,6 +581,22 @@ def _title_key(title: str) -> str:
     stripped = re.sub(r"(19|20)\d{2}", "", title or "")
     stripped = re.sub(r"[vV]\s*\d+(\.\d+)*", "", stripped)
     return re.sub(r"\s+", "", stripped)
+
+
+#: 追问里除了指代就是时间，没有任何能拿去文档里检索的实词。
+#: 剥掉这些之后剩不下什么东西，就说明这句得靠上一轮的问题才读得懂。
+_VAGUE_TOKENS = re.compile(
+    r"[\s，。？！、：；,.?!:;（）()“”‘’\"']|"
+    r"(19|20)\d{2}|[0-9]+|"
+    r"(那时候|什么时候|时候|那个月|那月|个月|月|年|日|号|份)|"
+    r"(那|这|它|呢|的|了|是|还有|另外|请问|呢|吧|吗)"
+)
+
+
+def _is_vague_query(text: str) -> bool:
+    """这句话拿去做检索够不够——不够就得把上一轮的问题也带上。"""
+    remainder = _VAGUE_TOKENS.sub("", text or "")
+    return len(remainder) < 4
 
 
 def _wants_value(question: str) -> bool:
