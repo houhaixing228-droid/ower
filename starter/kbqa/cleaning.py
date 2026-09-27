@@ -247,10 +247,18 @@ def build_clean_db(source: Path, target: Path) -> CleaningReport:
         src.close()
 
     target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists():
-        target.unlink()
+    # 不清文件重写，而是连上库把表重建：Windows 上有进程打开着这个文件就删不掉，
+    # 而 rebuild 常常是在服务还开着的时候跑的（现场往知识库里加文档就属于这种场景）。
     out = sqlite3.connect(target)
     try:
+        out.executescript(
+            """
+            DROP TABLE IF EXISTS sales_clean;
+            DROP TABLE IF EXISTS stores;
+            DROP TABLE IF EXISTS products;
+            DROP TABLE IF EXISTS meta;
+            """
+        )
         out.executescript(_SCHEMA)
         out.executemany("INSERT INTO stores VALUES (?,?,?,?)", stores)
         out.executemany("INSERT INTO products VALUES (?,?,?,?)", products)

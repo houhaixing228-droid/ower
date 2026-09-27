@@ -26,6 +26,8 @@ RETRIEVAL_SOFT_GATE = 12.0
 CLARIFY_SCORE = 8.0
 #: 拼给作答用的资料最长多少字，太长了没必要。
 MAX_CONTEXT_CHARS = 200
+#: 契约 §5：`answer` 硬上限 1200 字，留出截断余量给 composite 的前缀。
+MAX_ANSWER_CHARS = 1100
 
 
 class Answerer(HybridAnswers):
@@ -311,7 +313,13 @@ class Answerer(HybridAnswers):
     # -- 纯文档 -----------------------------------------------------------------
 
     def _context(self, result: SearchResult) -> str:
-        """把命中的那篇文档原样拼进来，答案就在里面，别漏了。"""
+        """把命中的整篇文档拼进来。
+
+        **不要用它拼 `answer`**：契约 §5 规定 answer 不超过 1200 字，
+        “给运营看的回答，不是把文档或数据倒出来”。KB-040 这种对照表整篇拼出来
+        就有两千多字，超上限，而且长引用在逐字校验里会被判“把整篇文档贴进来”。
+        它现在只用于内部排查，作答走 `_doc_block` 里摘出来的那几句。
+        """
         blocks: list[str] = []
         for hit in result.hits[:1]:
             for chunk in self.retriever.index.chunks_of(hit.doc_id):
@@ -351,4 +359,6 @@ class Answerer(HybridAnswers):
                 answer_type="clarify",
                 notes=["检索最高分 %.1f，且问题里没有指标、时间或门店" % top_score],
             )
-        return Answer(answer=self._context(result) + body, answer_type="doc", citations=citations)
+        # 答案只放从原文里摘出来的那几句；道理写在 `_context` 的注释里。
+        body = body[:MAX_ANSWER_CHARS]
+        return Answer(answer=body, answer_type="doc", citations=citations)

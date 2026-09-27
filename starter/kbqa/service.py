@@ -12,6 +12,7 @@ from .cleaning import build_clean_db
 from .docfacts import DocFacts
 from .config import Settings, load_settings
 from .entities import Catalog
+from .guard import preflight
 from .index import load_index
 from .live import LiveEngine
 from .llm import LLMClient, LLMError
@@ -153,6 +154,13 @@ class Service:
         try:
             if not question.strip():
                 return Answer(answer="没有收到问题内容，请再说一次。", answer_type="clarify")
+            # 安全闸门放在最前面：删改数据、套取表结构、提示注入一律在这里返回结构化
+            # refusal，根本不会走到检索和大模型。这样“模型这一次怎么说”不影响结果。
+            refusal = preflight(question)
+            if refusal:
+                trace.step("guard", {"verdict": "refusal"})
+                return Answer(answer=refusal, answer_type="refusal")
+            trace.step("guard", {"verdict": "pass"})
             history = self.sessions.history(session_id)
             started = time.perf_counter()
             plan = self.planner.plan(question)
@@ -169,10 +177,15 @@ class Service:
                 },
             )
             return answer
-        except Exception:  # noqa: BLE001 - 不管里面出什么事，接口都得给个像样的回答
+        except Exception as exc:  # noqa: BLE001 - 不管里面出什么事，接口都得给个像样的回答
+            # 契约 §5：错误要体现在 refusal 里，同时把真实原因记进 trace，
+            # 否则第四关的调试面板什么都看不到。
+            trace.error("answer_pipeline", exc)
             return Answer(
-                answer="抱歉，我暂时无法回答。",
+                answer="抱歉，这一次没能给出答案（%s）。"
+                "失败原因已经记在 trace 里，可以用这次的 trace_id 查。" % type(exc).__name__,
                 answer_type="refusal",
+                notes=["未处理异常：%s: %s" % (type(exc).__name__, exc)],
             )
 
     def _run_engine(self, plan, trace: Trace, history: list[dict]) -> Answer:
