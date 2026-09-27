@@ -14,6 +14,7 @@ import pytest
 
 from kbqa.cleaning import build_clean_db
 from kbqa.live import LiveEngine, _retrieved_doc_ids
+from kbqa.planner import Plan
 from kbqa.tools import DataTools
 
 
@@ -63,3 +64,27 @@ def test_value_citation_prefers_doc_that_has_the_number(engine):
     """只在 KB-029 和 KB-022 里挑，问"赔了多少"要挑出真写着金额的那篇。"""
     doc = engine._value_citation_doc(["供应商后来赔了多少？"], ["KB-029", "KB-022"])
     assert doc == "KB-022"
+
+
+def test_citations_swap_in_the_doc_that_holds_the_amount(engine):
+    """追问里模型没标出处、继承来的又是停售通知时，要把真写着金额的那篇换进来。
+
+    T02 第 3 轮完整链路：上一轮引的是 KB-021（停售通知），里面只有一句
+    "详见供应商邮件 KB-022"，金额不在这里；模型这一轮又没标出处。
+    换不过来，引用就落在 KB-021 上，`_allowed_numbers` 里没有 8,600，
+    写着金额的那句会被当成幻觉删掉，整题掉成 refusal。
+    """
+    question = "供应商后来赔了多少？"
+    plan = Plan(question=question, standalone=question, search_query=question)
+    history = [
+        {"question": "三文鱼poke 七月初为什么停售了？", "standalone": "三文鱼poke 七月初为什么停售了？",
+         "citations": [{"doc_id": "KB-021", "quote": "x"}]},
+        {"question": "那停售期间让顾客换成什么？", "standalone": "那停售期间让顾客换成什么？",
+         "citations": [{"doc_id": "KB-021", "quote": "x"}]},
+    ]
+    retrieved = {"c1": [{"doc_id": "KB-021"}, {"doc_id": "KB-029"}, {"doc_id": "KB-022"}]}
+
+    cites = engine._citations(plan, [], history=history, retrieved=retrieved)
+
+    assert [c["doc_id"] for c in cites] == ["KB-022"]
+    assert "8,600" in cites[0]["quote"]
