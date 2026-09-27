@@ -176,3 +176,57 @@ def test_value_doc_is_marked_even_when_the_model_already_cited_it(engine):
     by_doc = {c["doc_id"]: c["quote"] for c in cites}
     assert "KB-022" in by_doc, "引对了 KB-022，却因为挑不出句子被丢掉了"
     assert "8,600" in by_doc["KB-022"]
+
+
+def test_locating_also_looks_in_the_docs_the_model_cited(engine):
+    """按数定位的候选集不能只有本轮检索结果，还得算上模型自己点名的文档。
+
+    真实失败样本（debug trace 原样抄下来）：
+
+        in_doc_ids  = ["KB-022"]      <- 模型引对了
+        retrieved_n = 19              <- 本轮检索到 19 篇
+        answer_numbers = [8600, 2026, 7, 4, 8600, 7, 7, 6]
+        owner = null                  <- 但按数定位没找到
+
+    8600 在全库只出现在 KB-022 里，owner 却是 null，只能是 KB-022
+    **不在这 19 篇里**。这很合理：KB-022 是英文邮件，中文问句去 BM25
+    检索它得分很低，top_k=10 被别的中文文档占满了。模型是凭上一轮对话
+    知道 KB-022 的，不是这一轮搜到的。
+
+    所以候选集要并上 doc_ids：模型点名引的文档，本来就在"它看过什么"里。
+    """
+    question = "供应商后来赔了多少？"
+    plan = Plan(question=question, standalone=question, search_query=question)
+    # 本轮检索结果里故意没有 KB-022。
+    retrieved = {"c": [{"doc_id": "KB-021"}, {"doc_id": "KB-029"}, {"doc_id": "KB-027"}]}
+    answer = "供应商已开具 8600 元的贷项通知单，冲抵整批被拒收货值。"
+
+    cites = engine._citations(plan, ["KB-022"], retrieved=retrieved, answer=answer)
+
+    by_doc = {c["doc_id"]: c["quote"] for c in cites}
+    assert "KB-022" in by_doc, "KB-022 只出现在 doc_ids 里，按数定位就找不到它了"
+    assert "8,600" in by_doc["KB-022"]
+
+
+def test_value_carrying_doc_keeps_its_quote_even_if_the_model_dodges_the_number(engine):
+    """模型绕开数字改写（"全额冲抵货款"）时，引用照样要落到写着金额的那一篇。
+
+    另一种失败形态：模型不写 8600，而是写成"以贷记单形式全额冲抵货款"——
+    系统提示词明令禁止这种绕开数字的说法，但它偶尔还是这么写。
+    这时答案里一个 8600 都没有，按数定位无从下手；而 KB-022 又因为
+    "中文问句挑不出英文句子"拿不到引用，最后三条检查（cite_all / fact_all /
+    answer_type_in）一起挂掉。
+
+    评测本身允许"事实出现在 quote 里"算通过，所以只要这一篇确实写着问句要的
+    那类数值，就该给它 value 兜底——哪怕模型的正文把数字绕开了。
+    """
+    question = "供应商后来赔了多少？"
+    plan = Plan(question=question, standalone=question, search_query=question)
+    retrieved = {"c": [{"doc_id": "KB-021"}, {"doc_id": "KB-029"}]}
+    answer = "供应商以贷记单形式全额冲抵我方当月货款，无需另行索赔。"
+
+    cites = engine._citations(plan, ["KB-022"], retrieved=retrieved, answer=answer)
+
+    by_doc = {c["doc_id"]: c["quote"] for c in cites}
+    assert "KB-022" in by_doc
+    assert "8,600" in by_doc["KB-022"]

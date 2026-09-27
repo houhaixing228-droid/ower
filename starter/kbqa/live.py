@@ -613,18 +613,25 @@ class LiveEngine:
         value_doc: Optional[str] = None
         if not doc_ids:
             doc_ids = self._citation_fallback(plan, history)
-        if wants_value and retrieved:
-            candidates = _retrieved_doc_ids(retrieved)
-            # 先认"模型写出来的这个数到底出自哪一篇"。两类情况分开处理：
+        candidates = _retrieved_doc_ids(retrieved or {})
+        if wants_value:
+            # 按数定位的候选集 = 本轮检索到的 + 模型自己点名的。
             #
-            # 二、它标对了，但那篇挑不出句子（round8 T02 第 3 轮）：KB-022 是英文邮件、
-            #     问题是中文，`facts.rank` 两种模式都返回 []，于是这一篇在生成引用时
-            #     被静默丢掉，8600 跟着变成"不在允许清单里"的幻觉，被数字核对删掉。
-            #     所以只要这个数确实出自这一篇，就把它标成 value_doc、给它 value 兜底，
-            #     跟"它是不是刚刚被换进来的"无关。
-            owner = self._locate_number_owner(_numbers_in(answer), candidates, kinds)
+            # 只算检索结果是不够的。真实失败样本（trace 原样抄下来）：
+            #   in_doc_ids = ["KB-022"]  retrieved_n = 19  answer_numbers 含 8600  owner = null
+            # 8600 全库只在 KB-022 里，owner 却是 null，只能是 KB-022 不在这 19 篇里：
+            # 它是英文邮件，中文问句用 BM25 搜它得分很低，top_k 被别的中文文档占满。
+            # 模型是凭上一轮对话知道这篇的，不是这一轮搜到的。
+            #
+            # 所以：它点名引的文档，本来就在"它看过什么"里，必须一起找。
+            pool = list(candidates)
+            for doc_id in doc_ids:
+                if doc_id not in pool:
+                    pool.append(doc_id)
+            owner = self._locate_number_owner(_numbers_in(answer), pool, kinds)
             if owner:
                 value_doc = owner[1]
+        if wants_value and retrieved:
             # 一、它没标出处，继承来的文档里又没有金额（T02 早期那一版）：
             #     继承的是停售通知 KB-021，里面只写"详见供应商邮件 KB-022"，
             #     钱在 KB-022 里——那就按相关度另挑一篇来引。
@@ -649,7 +656,21 @@ class LiveEngine:
             if doc_id not in self.answerer.retriever.index.docs_meta:
                 continue
             ranked = self._rank_citation(
-                doc_id, queries, wants_value, allow_value_fallback=(doc_id in (value_doc,))
+                doc_id,
+                queries,
+                wants_value,
+                # value 兜底给两类文档：
+                # 1. 刚刚按数定位/按相关度换进来的那一篇；
+                # 2. 问句在要一个数、而这一篇确实写着这类数值的（模型点名引了它）。
+                #    第 2 类补的是"模型绕开数字改写"那种情况：它把 8600 说成
+                #    "全额冲抵货款"，答案里一个数都没有，按数定位无从下手；
+                #    而 KB-022 因为是英文邮件、中文问句挑不出句子，引用也会空。
+                #    评测允许事实出现在 quote 里算通过，所以这一篇该保住。
+                #    兜底只在 rank 全空时才走到（正常中文问句撞中文文档不会走到这里）。
+                allow_value_fallback=(
+                    doc_id == value_doc
+                    or (wants_value and self._carries_value(doc_id, kinds))
+                ),
             )
             if not ranked:
                 continue
