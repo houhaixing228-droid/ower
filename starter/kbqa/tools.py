@@ -13,6 +13,9 @@ from .cleaning import normalise_id, open_readonly
 
 METRIC_FIELDS = ("net_revenue", "refund_amount", "orders", "aov", "qty")
 
+#: 一条连接出错后最多重开几次再放弃。
+_DB_RETRIES = 1
+
 
 def yuan(cents: int) -> float:
     """分转元，保留 2 位小数。"""
@@ -49,6 +52,21 @@ class DataTools:
             conn.close()
             self._local.conn = None
 
+    def query(self, sql: str, params: Any = ()) -> sqlite3.Cursor:
+        """执行只读查询，失败就丢掉这条连接重开再试一次。
+
+        连接是按线程复用的：有一次 OperationalError（重建库、磁盘抖动、文件被换掉），
+        这个线程之后处理的**每个**请求都会接着报同样的错——多轮对话里第二轮第三轮
+        连着挂就是这个原因。重开一条连接基本都能恢复，所以失败时先换连接再试。
+        """
+        for attempt in range(_DB_RETRIES + 1):
+            try:
+                return self.conn.execute(sql, params)
+            except sqlite3.Error:
+                self.close()
+                if attempt == _DB_RETRIES:
+                    raise
+
     def _where(self, start: str, end: str, store_id=None, product_id=None) -> tuple[str, list]:
         """契约 §2：start/end 是闭区间，所以这里必须是 `date <= end`。
 
@@ -68,29 +86,29 @@ class DataTools:
     # -- 元信息 -----------------------------------------------------------------
 
     def cleaning_report(self) -> dict:
-        row = self.conn.execute("SELECT value FROM meta WHERE key='cleaning_report'").fetchone()
+        row = self.query("SELECT value FROM meta WHERE key='cleaning_report'").fetchone()
         import json
 
         return json.loads(row[0]) if row else {}
 
     def valid_sales_rows(self) -> int:
-        return int(self.conn.execute("SELECT COUNT(*) FROM sales_clean").fetchone()[0])
+        return int(self.query("SELECT COUNT(*) FROM sales_clean").fetchone()[0])
 
     def run_sql(self, sql: str) -> dict:
         """执行一条 SQL。工具覆盖不到的查法，让模型自己写。"""
-        cursor = self.conn.execute(sql)
+        cursor = self.query(sql)
         rows = [dict(row) for row in cursor.fetchall()] if cursor.description else []
         self.conn.commit()
         return {"sql": sql, "rows": rows[:50], "row_count": len(rows)}
 
     def stores(self) -> list[dict]:
-        return [dict(r) for r in self.conn.execute("SELECT * FROM stores ORDER BY store_id")]
+        return [dict(r) for r in self.query("SELECT * FROM stores ORDER BY store_id")]
 
     def products(self) -> list[dict]:
-        return [dict(r) for r in self.conn.execute("SELECT * FROM products ORDER BY product_id")]
+        return [dict(r) for r in self.query("SELECT * FROM products ORDER BY product_id")]
 
     def data_period(self) -> dict:
-        row = self.conn.execute("SELECT MIN(date), MAX(date) FROM sales_clean").fetchone()
+        row = self.query("SELECT MIN(date), MAX(date) FROM sales_clean").fetchone()
         return {"start": row[0], "end": row[1]}
 
     # -- 指标 -------------------------------------------------------------------
@@ -106,7 +124,7 @@ class DataTools:
         - 销量 = 销售行数量 - 退款行数量。
         """
         where, params = self._where(start, end, store_id, product_id)
-        row = self.conn.execute(
+        row = self.query(
             """
             SELECT COALESCE(SUM(amount_cents), 0),
                    COALESCE(SUM(CASE WHEN is_refund = 1 THEN amount_cents ELSE 0 END), 0),
@@ -137,7 +155,7 @@ class DataTools:
         契约 §3 要求闭区间内的每一天都在；没有数据那天数值为 0、`aov` 为 null。
         """
         where, params = self._where(start, end, store_id, product_id)
-        rows = self.conn.execute(
+        rows = self.query(
             """
             SELECT date,
                    COALESCE(SUM(amount_cents), 0),
@@ -168,7 +186,7 @@ class DataTools:
     def payment_mix(self, start: str, end: str, store_id=None) -> dict:
         """各支付方式的订单数、金额与占比。"""
         where, params = self._where(start, end, store_id)
-        rows = self.conn.execute(
+        rows = self.query(
             """
             SELECT payment,
                    COUNT(DISTINCT CASE WHEN is_refund=0 THEN order_id END),
@@ -202,7 +220,7 @@ class DataTools:
 
     def top_products(self, start: str, end: str, store_id=None, limit: int = 10) -> dict:
         where, params = self._where(start, end, store_id)
-        rows = self.conn.execute(
+        rows = self.query(
             """
             SELECT s.product_id, p.product_name, p.product_category,
                    COALESCE(SUM(s.amount_cents), 0),
@@ -273,7 +291,7 @@ class DataTools:
         return {"start": start, "end": end, "categories": items}
 
     def first_sale_date(self, product_id: str) -> Optional[str]:
-        row = self.conn.execute(
+        row = self.query(
             "SELECT MIN(date) FROM sales_clean WHERE product_id = ? AND is_refund = 0",
             (product_id.strip().upper(),),
         ).fetchone()
@@ -290,7 +308,7 @@ class DataTools:
         if store_id:
             clause = " AND store_id = ?"
             params.append(store_id.strip().upper())
-        rows = self.conn.execute(
+        rows = self.query(
             """
             SELECT date, amount_cents, qty, store_id FROM sales_clean
             WHERE product_id = ? AND is_refund = 0 AND qty > 0 AND date >= ? AND date <= ?%s
@@ -312,7 +330,7 @@ class DataTools:
             if latest_date is None or day >= latest_date:
                 latest_date, latest_price = day, price
         table_price = None
-        row = self.conn.execute(
+        row = self.query(
             "SELECT unit_price FROM products WHERE product_id = ?", (product_id,)
         ).fetchone()
         if row:
