@@ -1,0 +1,67 @@
+name: 评测即回归
+
+# 只跟着 practice 分支走：ower 仓库的 main 是作品集总览、centific 是另一个项目，
+# 那两个分支里没有 starter/。
+on:
+  push:
+    branches: [practice]
+  pull_request:
+    branches: [practice]
+  workflow_dispatch:
+
+jobs:
+  gate:
+    name: 单测 + 评测脚本自测 + 评测回归
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: starter
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 装依赖
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: 服务自身单测
+        run: python -m pytest tests -q
+
+      - name: 评测脚本自测（评测评测脚本本身）
+        run: |
+          cd ../eval/tests
+          python -m unittest test_run_eval test_run_eval_public \
+            test_compare_reports test_regression_baseline \
+            test_extra_questions
+
+      # 这一步就是"评测即回归"：自己起服务（mock 模式，不需要 API Key）、
+      # 跑一遍公开题库、和 eval/baseline.json 逐题比。
+      # 有题由绿变红、有题从报告里消失、或总分掉了超过容差，这一步就红。
+      - name: 评测回归比对
+        run: python ../eval/regression_check.py
+
+      - name: 对比表写进 job 摘要
+        if: always()
+        run: |
+          {
+            echo '## 评测回归对比（mock 模式）'
+            echo ''
+            echo '```'
+            python ../eval/compare_reports.py --current ../eval/_regression/report.json || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 失败时把报告和服务日志一并上传
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-regression
+          path: |
+            eval/_regression/report.md
+            eval/_regression/report.json
+            eval/_regression/service.log
+          if-no-files-found: ignore
