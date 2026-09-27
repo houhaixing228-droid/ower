@@ -394,6 +394,12 @@ class LiveEngine:
             followup, None, budget=remaining, on_call=trace.llm
         )
         text = _DOC_MARK.sub("", reply.content or "").strip()
+        if _RAW_TOOL_CALL.search(text):
+            # 模型把"重写"又写成了工具调用：当这次重写失败处理，
+            # 退回 _drop_sentences 那条路。剥完标记剩下的往往只是一串检索词
+            # （"Tasman 三文鱼 赔付 金额"），当答案交出去同样是事故。
+            return None
+        text = _strip_raw_tool_calls(text)
         if not text:
             return None
         return text, [value for value in _numbers_in(text) if not _matches(value, allowed)]
