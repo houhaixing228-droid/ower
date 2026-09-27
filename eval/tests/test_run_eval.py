@@ -537,6 +537,21 @@ class Handler(BaseHTTPRequestHandler):
             body = ('{"answer":"%s","answer_type":"refusal","citations":[],'
                     '"data_evidence":[]}' % ("无法回答。" * 400000))
             self._send(200, None, raw=body.encode("utf-8"))
+        elif mode == "huge_declared":
+            # 头里自报 99 MB，正文只发一点点就关连接。
+            # 老客户端会把这小段正文读完、当正常回答去解析（跟"太大"无关）；
+            # 按响应头短接之后，还没读正文就该判"太大"。
+            body = (b'{"answer":"ok","answer_type":"refusal","citations":[],'
+                    b'"data_evidence":[]}')
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type",
+                                 "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(99 * 1024 * 1024))
+                self.end_headers()
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
         elif mode == "drip":
             raw = json.dumps({"answer": "无法回答。", "answer_type": "refusal",
                               "citations": [], "data_evidence": [],
@@ -1313,6 +1328,16 @@ class TestAdversarialResponses(unittest.TestCase):
 
     def test_huge_response_body(self):
         self.assert_failed_with(self.run_raw("huge_body", qid="G14"), "MB")
+
+    def test_oversize_body_is_rejected_from_content_length(self):
+        """头里自报超大时，不读正文就该判"太大"。
+
+        这是一条**确定性**回归：`huge_body` 那条要靠客户端真去读正文，
+        忙的时候会和服务端关连接赛跑，对方先发 RST 就会报成"连接被强迫关闭"
+        而不是"太大"。按 `Content-Length` 短接之后，判据落在响应头上，
+        不再和连接谁先动有关。
+        """
+        self.assert_failed_with(self.run_raw("huge_declared", qid="G14"), "MB")
 
     def test_slow_drip_hits_the_absolute_deadline(self):
         started = time.monotonic()
