@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from kbqa.guard import unknown_entity_intent
-from kbqa.live import LiveEngine, _NO_RESULT_MARK, _title_key
+from kbqa.live import LiveEngine, _NO_RESULT_MARK, _title_key, _wants_value
 
 STORES = ["S01", "S02", "S03", "S04", "S05"]
 PRODUCTS = ["P01", "P05", "P06", "P21"]
@@ -62,6 +62,31 @@ def test_canonical_doc_swaps_archived_for_current():
     # 回看过去的问句必须照原样引旧版
     assert engine._canonical_doc("KB-010", "那 6 月的时候呢？") == "KB-010"
     assert engine._canonical_doc("KB-024", "2025 年那次活动是什么商品？") == "KB-024"
+
+
+def test_superseded_doc_finds_predecessor():
+    """追问"那 6 月的时候呢"要引旧版——旧版就是 superseded_by 指向当前版的那一份。"""
+    engine = _engine_with(
+        {
+            "KB-011": {"title": "会员储值政策 v2", "status": "现行"},
+            "KB-010": {
+                "title": "会员储值政策 v1",
+                "status": "已废止",
+                "superseded_by": "KB-011",
+            },
+            "KB-023": {"title": "2026 年 618 活动方案", "status": "现行"},
+        }
+    )
+    assert engine._superseded_doc("KB-011") == "KB-010"
+    # 没有前身就还是它自己
+    assert engine._superseded_doc("KB-023") == "KB-023"
+
+
+def test_wants_value_covers_target_questions():
+    """问"达标了吗"就是在要数字，挑引用时要优先挑带数字的那句。"""
+    assert _wants_value("冷萃乌龙茶上市第一个月的销量达标了吗？")
+    assert _wants_value("618 当天卖了多少份？达到目标了吗？")
+    assert not _wants_value("最新的排班制度怎么规定的")
 
 
 def test_unknown_store_code_is_refused():
