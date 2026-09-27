@@ -17,6 +17,36 @@ from .toolspec import TOOLS
 #: 模型常常要连着检索两三次才收敛（先找政策、再找活动方案、再对一下店长周报），
 #: 4 轮太紧，会把一次正常的检索过程判成“没有收敛”。
 MAX_TOOL_ROUNDS = 6
+#: 模型偶尔不通过 tool_calls 字段、而是把工具调用直接写进正文（DSML 标记那一串）。
+#: 最后那一轮不再给工具时它更容易这么干。这种不算回答，补一轮提示再来。
+MAX_TEXT_TOOL_NUDGES = 2
+#: 上面那种正文的特征。写得宽松些，不同版本的标记形式都认得住。
+_RAW_TOOL_CALL = re.compile(
+    r"(<\s*\|+\s*DSML|DSML\s*\|+\s*>|invoke\s+name\s*[=:]|function_calls|"
+    r"[\"']tool_calls[\"']|\bparallel_tool_calls\b)",
+    re.I,
+)
+
+
+#: 模型把工具调用写成正文时的补正提示。
+_TOOL_CALL_NUDGE = (
+    "你刚才没有给出回答，而是把工具调用的标记写进了正文。"
+    "要查数据、检索知识库就正常调用工具；要给出结论就直接写中文回答。"
+    "两种都可以，但不要再把尖括号标记写进正文。"
+)
+
+
+def _strip_raw_tool_calls(text: str) -> str:
+    """把正文里残留的工具调用标记剥掉，别把一串尖括号当答案发给用户。"""
+    if not text or not _RAW_TOOL_CALL.search(text):
+        return text
+    cleaned = re.sub(r"<[^<>]{0,4000}?>", " ", text, flags=re.S)
+    for marker in ("DSML", "invoke", "parameter", "function_calls", "tool_calls"):
+        cleaned = re.sub(re.escape(marker), " ", cleaned)
+    cleaned = re.sub(r"[\s|｜]{2,}", " ", cleaned).strip()
+    return cleaned
+
+
 MAX_BAD_ARGS = 2
 #: 数字核对没过关时最多让模型重写一次。
 MAX_REWRITES = 1
@@ -54,12 +84,18 @@ SYSTEM_PROMPT = """你是一家连锁餐饮公司的经营分析助手，服务�
 回答硬要求：
 - 数量和金额一律写**阿拉伯数字**：写 50、689、13524.00，不要写“五十”“约 1.3 万”。
   中文数字在回答里查不出来，等于没说。
+- 问“多少”“多少钱”“赔了多少”这类**要一个数**的问题，回答里必须出现那个数。
+  文档写的是“赔付 CNY 8,600”，就写 8600，不要只说“全额冲抵”“覆盖全部货款”
+  这种把数字绕开的说法——绕开了等于没答。
 - **只写你采纳的那版数字，不要为了做对比把不用的数字也写出来。**
   例如旧版送 50、新版送 60，就只写 60；不要写“旧版送 50 已废止”这种句子——
   读者只会看到两个数字，分不清哪个算数。版本差异用文字说，不用数字说。
   同理，文档里的估算值（周报里“大概 150 份”）**提都不要提**，连“这是估算、不采用”也别写。
 - 引用文档时在句末写上它的编号，例如 [KB-013]；编号只能来自检索结果，不许自己编。
   不要大段照抄原文，摘出支撑这一点的那一两句就够了。
+  **编号要落在真正写出这个信息的那一份上**：金额、日期、目标值这种关键事实，
+  出自哪篇就标哪篇——只要它出现在你这一段的检索结果里就行，
+  别标成"综合几条"的纪要或汇总。引错出处和没引一样。
   **只引真正支撑结论的那几份**，检索结果里没用上的不要顺手引上；问“现在/今年”时不要引归档或已废止的那版。
 - 同一件事有几份文档版本时，用**当前有效**的那一版；用户问“当时/以前的规定”时，用**当时有效**的那一版。
   已注明废止或被取代的版本不能当现行规定用。
@@ -100,22 +136,32 @@ class LiveEngine:
         evidence: list[dict] = []
         retrieved: dict[str, list] = {}
         bad_args = 0
+        nudges = 0
 
-        for round_index in range(MAX_TOOL_ROUNDS + 1):
+        for round_index in range(MAX_TOOL_ROUNDS + 1 + MAX_TEXT_TOOL_NUDGES):
             remaining = deadline - time.perf_counter()
             if remaining < 10:
                 raise LLMError("budget", "整体耗时接近 /api/chat 的时限，已停止调用模型")
             # 最后一轮不给工具：强制它把已经查到的东西说成一段话，
             # 而不是再来一轮检索直到被判“没有收敛”。
-            allow_tools = TOOLS if round_index < MAX_TOOL_ROUNDS else None
+            # 补提示的那几轮要把工具放回去——它想调工具才这么写的。
+            allow_tools = TOOLS if round_index < MAX_TOOL_ROUNDS + nudges else None
             reply = self.client.chat_with_retry(
                 messages, allow_tools, budget=remaining, on_call=trace.llm
             )
             if not reply.tool_calls:
+                if _RAW_TOOL_CALL.search(reply.content or "") and nudges < MAX_TEXT_TOOL_NUDGES:
+                    # 它把工具调用写成了正文（H06 就这样把一段尖括号当答案发出去）。
+                    # 当成"还想调工具"处理：说清楚规矩，再把工具放开重来一轮。
+                    nudges += 1
+                    trace.step("tool_call_as_text", {"round": round_index})
+                    messages.append({"role": "assistant", "content": reply.content})
+                    messages.append({"role": "user", "content": _TOOL_CALL_NUDGE})
+                    continue
                 return self._finalise(
                     plan, reply.content, evidence, retrieved, trace, messages, history
                 )
-            if round_index == MAX_TOOL_ROUNDS:
+            if round_index >= MAX_TOOL_ROUNDS + nudges:
                 # 到了最后还想要工具，就用手上已有的结果收尾。
                 return self._finalise(
                     plan, reply.content, evidence, retrieved, trace, messages, history
@@ -204,6 +250,8 @@ class LiveEngine:
             if match.group(1) not in doc_ids:
                 doc_ids.append(match.group(1))
         text = _DOC_MARK.sub("", content).strip()
+        # 兜底：万一工具调用标记还是漏到了这里，剥掉再往外给。
+        text = _strip_raw_tool_calls(text)
         citations = self._citations(plan, doc_ids, history)
         evidence = self._trim_evidence(evidence, plan)
         allowed = self._allowed_numbers(plan, evidence, citations)
