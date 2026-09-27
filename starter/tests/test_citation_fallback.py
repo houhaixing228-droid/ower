@@ -139,3 +139,40 @@ def test_citations_use_the_answer_number_to_place_the_quote(engine):
 
     assert [c["doc_id"] for c in cites] == ["KB-022"]
     assert "8,600" in cites[0]["quote"]
+
+
+def test_value_doc_is_marked_even_when_the_model_already_cited_it(engine):
+    """模型自己引对了 KB-022，照样会丢掉——这一条就是 round8 T02 第 3 轮。
+
+    前面几条测试都在修"没引上出处"，修完之后仍然失分，因为真实链路是另一种：
+    模型这次**引对了**（正文里写了 [KB-022]），于是 `doc_ids` 里已经有 KB-022，
+    `_value_citation_doc` 那一步就不再触发（它只在"现有文档里没有金额句"时才换）。
+
+    问题是 KB-022 是一封英文邮件，而问题问的是中文"供应商后来赔了多少"，
+    `facts.rank` 两种模式在这个组合下都挑不出任何句子：
+
+        rank("供应商后来赔了多少？", "KB-022", require_value=True)  -> []
+        rank("供应商后来赔了多少？", "KB-022", require_value=False) -> []
+
+    而 `allow_value_fallback` 只在文档是"被换进来的"（value_doc）时才打开，
+    于是 KB-022 被静默丢掉，引用只剩 KB-021 和 KB-029。8600 随之不在
+    `_allowed_numbers` 里 → 判成幻觉 → 重写 → 重写又写出一段元评论 → 题就这么丢了。
+
+    所以：**只要模型写出来的数确实出自这一篇，就该给它 value 兜底**，
+    跟"是不是刚刚换进来的"无关。
+    """
+    question = "供应商后来赔了多少？"
+    plan = Plan(question=question, standalone=question, search_query=question)
+    retrieved = {"c": [{"doc_id": "KB-021"}, {"doc_id": "KB-029"}, {"doc_id": "KB-022"}]}
+    answer = "供应商已开具 8600 元的贷项通知单，冲抵整批被拒收货值。"
+
+    cites = engine._citations(
+        plan,
+        ["KB-021", "KB-029", "KB-022"],
+        retrieved=retrieved,
+        answer=answer,
+    )
+
+    by_doc = {c["doc_id"]: c["quote"] for c in cites}
+    assert "KB-022" in by_doc, "引对了 KB-022，却因为挑不出句子被丢掉了"
+    assert "8,600" in by_doc["KB-022"]
