@@ -123,6 +123,11 @@ CI 在 `.github/workflows/practice-ci.yml`。证据与明细见 `EVAL_REPORT.md`
 12 题 / 25 分，live 三轮 23.0 → 18.5 → 23.5（后两处失分是我出的题自己写错，
 被评测抓出来）。
 
+**四、现场加文档不用停服务。** `POST /api/maintenance/rebuild` 就地重建清洗表与检索索引，
+服务不重启：往 `knowledge_base/` 里丢一份新文档、调一次这个接口，就能答上相关问题
+（实测 35 篇文档 1103 ms 重建完，`/api/health` 的 `kb_chunks` / `index_key` 随即更新）。
+不调它也不会拿旧索引答新文档——`load_index` 发现内容键与知识库对不上会自己重建。
+
 ## 必交文档索引
 
 | 文件 | 内容 |
