@@ -284,7 +284,7 @@ class LiveEngine:
         text = _DOC_MARK.sub("", content).strip()
         # 兜底：万一工具调用标记还是漏到了这里，剥掉再往外给。
         text = _strip_raw_tool_calls(text)
-        citations = self._citations(plan, doc_ids, history, retrieved)
+        citations = self._citations(plan, doc_ids, history, retrieved, text)
         evidence = self._trim_evidence(evidence, plan)
         allowed = self._allowed_numbers(plan, evidence, citations)
         bad = [value for value in _numbers_in(text) if not _matches(value, allowed)]
@@ -459,21 +459,32 @@ class LiveEngine:
                 queries.append(previous)
         return queries
 
-    def _value_citation_doc(self, queries: list[str], doc_ids: list[str]) -> Optional[str]:
+    def _value_citation_doc(
+        self, queries: list[str], doc_ids: list[str], wanted: Optional[list[float]] = None
+    ) -> Optional[str]:
         """问数值类问题却没标出处时，从候选文档里挑出真正写着数值的那一篇。
 
-        挑法分两步：
-        1. 每篇都用 require_value 挑一遍带数字的句子，谁挑出来的分最高就选谁；
-        2. 一篇都挑不出来时（中文问句撞上英文邮件，词面完全不重叠，按词打分全为 0），
-           退一步只看"这篇里有没有写着问句要的那种数值的句子"——问金额就找带金额的，
-           问时长就找带时长的。这不是相关性判断，是"这个数只有这篇里有"的事实判断。
-        两步都落空就返回 None，宁可没有引用也不要硬塞一篇不相干的。
+        挑法三步，从上往下退：
+        0. **按数定位**：模型已经写出了那个数（"赔偿金额为 8600"），却在它读过
+           的文档里找不到出处。那就反着找——这个数在哪一篇里？什么词都不用比，
+           语言不通也没关系。这一步最准，因为它是事实级的对应。
+        1. 按相关度打分（require_value=True），谁挑出来的分最高就选谁。
+        2. 都挑不出来时（中文问句撞上英文邮件，词面完全不重叠），退一步只看
+           "这篇里有没有写着问句要的那种数值的句子"。
+        三步都落空就返回 None，宁可没有引用也不要硬塞一篇不相干的。
         """
+        candidates = [
+            doc_id
+            for doc_id in doc_ids
+            if doc_id in self.answerer.retriever.index.docs_meta
+        ]
+        kinds = _numeric_kinds(*queries)
+        located = self._locate_number(wanted, candidates, kinds)
+        if located:
+            return located
         best: Optional[str] = None
         best_score = 0.0
-        for doc_id in doc_ids[:5]:
-            if doc_id not in self.answerer.retriever.index.docs_meta:
-                continue
+        for doc_id in candidates:
             for query in queries:
                 ranked = self.answerer.facts.rank(query, doc_id, 1, require_value=True)
                 if ranked and ranked[0][0] > best_score:
@@ -481,15 +492,50 @@ class LiveEngine:
                     break
         if best:
             return best
-        kinds = _numeric_kinds(*queries)
         if not kinds:
             return None
-        for doc_id in doc_ids[:5]:
-            if doc_id not in self.answerer.retriever.index.docs_meta:
-                continue
+        for doc_id in candidates:
             if self._carries_value(doc_id, kinds):
                 return doc_id
         return None
+
+    def _locate_number(
+        self, wanted: Optional[list[float]], doc_ids: list[str], kinds: list[str]
+    ) -> Optional[str]:
+        """模型写出来的数，哪篇文档里有。
+
+        认的条件两条，缺一不可：
+        * 这个数在候选文档里只出现一次。出现两次以上说明它只是个普通数字
+          （7 是 7 月、2 是第二家店），认了等于乱认；
+        * 这篇确实写着问句要的那类数值。问金额就得真有金额句——不然
+          "7 月 13 日恢复供货"里的 13 也可能被当成答案。
+
+        同时满足的取绝对值最大的那个：金额、份数这类关键事实通常比年月日大得多。
+        年份直接不认：它是时间本身，不是"答出来的数"。
+        """
+        if not wanted or not doc_ids:
+            return None
+        wanted = [
+            value for value in wanted if not (1900 <= abs(value) <= 2100)
+        ]
+        if not wanted:
+            return None
+        owners: dict[float, list[str]] = {}
+        for doc_id in doc_ids:
+            numbers = _numbers_in(self.answerer.retriever.index.texts.get(doc_id, ""))
+            for value in wanted:
+                if _matches(value, numbers):
+                    owners.setdefault(value, []).append(doc_id)
+        best: Optional[tuple[float, str]] = None
+        for value, found_in in owners.items():
+            if len(found_in) != 1:
+                continue
+            doc_id = found_in[0]
+            if kinds and not self._carries_value(doc_id, kinds):
+                continue
+            if best is None or abs(value) > abs(best[0]):
+                best = (value, doc_id)
+        return best[1] if best else None
 
     def _carries_value(self, doc_id: str, kinds: list[str]) -> bool:
         """这篇文档里有没有一句写着问句要的那种数值。"""
@@ -506,12 +552,14 @@ class LiveEngine:
         doc_ids: list[str],
         history: Optional[list[dict]] = None,
         retrieved: Optional[dict] = None,
+        answer: str = "",
     ) -> list[dict]:
         """引用由代码生成：从模型点名的文档里挑最相关的一句原文，保证逐字可核对。
 
         问“赔了多少”“目标多少”“毛利率多少”这类带数的问题时，优先挑**带数字**的那一句：
         挑出来的句子会原样进 `quote`，而评测核对事实时会连 quote 一起看。
         挑不到带数字的再退回按相关度挑，不至于引不上有内容的原文。
+        `answer` 用于第 0 步兜底：模型写出来的数找不到出处时，拿它去文档里定位。
         """
         question = plan.standalone or plan.question
         wants_value = _wants_value(question)
@@ -526,7 +574,9 @@ class LiveEngine:
             # 里面只写了"详见供应商邮件 KB-022"，没有金额；钱在 KB-022 里。
             # 不换的话，写着 8,600 的那句会因为出处不在允许清单里被数字核对删掉。
             if not any(self._carries_value(doc_id, kinds) for doc_id in doc_ids):
-                picked = self._value_citation_doc(queries, _retrieved_doc_ids(retrieved))
+                picked = self._value_citation_doc(
+                    queries, _retrieved_doc_ids(retrieved), _numbers_in(answer)
+                )
                 if picked:
                     doc_ids = [picked]
                     value_doc = picked
