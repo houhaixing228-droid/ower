@@ -358,7 +358,16 @@ class Client:
 
         socket 超时只管"一次读多久没动静"；每 80 毫秒挤一小段的服务能把
         `--timeout` 拖到无限长，所以这里用**从发请求算起**的绝对截止时间。
+
+        响应头里自报 `Content-Length` 的，先按它判一次：够大就直接中断，
+        不用把前面 2 MB 读进内存再发现超了。这不只是省内存——真读起来
+        会和服务端关连接赛跑，忙的时候（回环被压实）对方先发 RST，就会
+        报成"请求失败：连接被强迫关闭"，而不是这里该给的"响应体超过 X MB"。
+        头里没报长度（分块编码、或服务端直接关连接）的，退回下面边读边数。
         """
+        declared = getattr(fh, "length", None)
+        if declared is not None and declared > MAX_BODY_BYTES:
+            raise _TooBig()
         chunks, total = [], 0
         while True:
             if time.monotonic() - started > self.timeout:
