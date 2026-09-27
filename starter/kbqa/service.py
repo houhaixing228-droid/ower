@@ -43,9 +43,12 @@ class Service:
         self.tools = DataTools(settings.clean_db)
         self.index = load_index(settings.kb_dir, settings.index_path, rebuild=not only_if_missing)
         self.retriever = Retriever(self.index, settings.today)
-        self.catalog = Catalog(
-            stores=self.tools.stores(), products=self.tools.products(), aliases=self.index.aliases
-        )
+        stores = self.tools.stores()
+        products = self.tools.products()
+        # 安全闸门要用：问题里点了库里没有的编号（比如 S06）时直接拒答。
+        self.known_stores = sorted(row["store_id"] for row in stores if row.get("store_id"))
+        self.known_products = sorted(row["product_id"] for row in products if row.get("product_id"))
+        self.catalog = Catalog(stores=stores, products=products, aliases=self.index.aliases)
         self.data_period = self.tools.data_period()
         self.facts = DocFacts(self.index)
         self.answerer = Answerer(
@@ -95,6 +98,33 @@ class Service:
         result = self.retriever.search(query or "", top_k=wanted)
         return {"results": [hit.as_result() for hit in result.hits]}
 
+    def _kb_view(self, item: dict) -> dict:
+        """给模型看的检索结果：除了正文，还要带上它判断版本用得着的东西。
+
+        只给正文时模型分不清“2025 年 618 方案”和“2026 年 618 方案”哪个还算数，
+        于是两篇一起引，答案里同时出现旧价和新价。这里把 status、生效日期、
+        被谁取代一起给它，让"这份是历史版本"变成看得见的信号。
+        """
+        meta = self.index.docs_meta.get(item.get("doc_id", ""), {})
+        view = dict(item)
+        view["title"] = meta.get("title") or ""
+        if meta.get("status"):
+            view["status"] = meta["status"]
+        if meta.get("effective_from"):
+            view["effective_from"] = meta["effective_from"]
+        notes = []
+        successor = meta.get("superseded_by")
+        if meta.get("status") == "已废止" and successor:
+            successor_from = (self.index.docs_meta.get(successor) or {}).get("effective_from") or "之后"
+            notes.append("已废止，%s 起由 %s 取代" % (successor_from, successor))
+        elif meta.get("status") == "归档":
+            notes.append("归档的历史版本，不是现行规则")
+        if meta.get("estimates_only"):
+            notes.append("这份里的数字是估算值，不能当作经营数字")
+        if notes:
+            view["version_note"] = "；".join(notes)
+        return view
+
     # -- 工具执行（live 模式下由模型驱动） ---------------------------------------
 
     def run_tool(self, name: str, params: dict) -> dict:
@@ -125,7 +155,9 @@ class Service:
                 return {"error": "缺少必填参数 %s" % key}
         try:
             if name == "search_kb":
-                return self.retrieve(cleaned["query"], cleaned.get("top_k", 5))
+                payload = self.retrieve(cleaned["query"], cleaned.get("top_k", 5))
+                payload["results"] = [self._kb_view(item) for item in payload["results"]]
+                return payload
             return getattr(self.tools, name)(**cleaned)
         except (TypeError, ValueError) as exc:
             return {"error": "工具 %s 执行失败：%s" % (name, exc)}
@@ -156,7 +188,7 @@ class Service:
                 return Answer(answer="没有收到问题内容，请再说一次。", answer_type="clarify")
             # 安全闸门放在最前面：删改数据、套取表结构、提示注入一律在这里返回结构化
             # refusal，根本不会走到检索和大模型。这样“模型这一次怎么说”不影响结果。
-            refusal = preflight(question)
+            refusal = preflight(question, self.known_stores, self.known_products)
             if refusal:
                 trace.step("guard", {"verdict": "refusal"})
                 return Answer(answer=refusal, answer_type="refusal")
@@ -189,11 +221,18 @@ class Service:
             )
 
     def _run_engine(self, plan, trace: Trace, history: list[dict]) -> Answer:
-        if not self.settings.live or plan.intent == "refusal":
+        if not self.settings.live:
             started = time.perf_counter()
             answer = self.answerer.answer(plan, trace)
             trace.step("answer_mock", {"answer_type": answer.answer_type}, started=started)
             return answer
+        # live 模式下 planner 的拒答不再一票否决：它经常把“现在营业到几点”这类
+        # 文档问题判成“今天没有数据”。安全闸门（guard）已经在更前面拦过一轮，
+        # 这里把 planner 的判断当成一条提示交给模型，由模型决定怎么答。
+        if plan.intent == "refusal":
+            plan.notes.append("planner 建议拒答：%s" % (plan.refusal or ""))
+            plan.notes.append("如果你判断这其实是文档问题，请照常检索作答；"
+                              "如果确实需要区间外的数据，请如实说没有数据。")
         client = LLMClient(
             self.settings.llm_base_url,
             self.settings.llm_api_key,

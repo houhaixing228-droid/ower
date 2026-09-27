@@ -41,6 +41,7 @@ def _engine_with(docs_meta):
 
     engine = LiveEngine.__new__(LiveEngine)
     engine.answerer = answerer
+    engine.today = "2026-09-01"
     return engine
 
 

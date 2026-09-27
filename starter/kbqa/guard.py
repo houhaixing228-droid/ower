@@ -99,7 +99,48 @@ def injection_intent(question: str) -> bool:
     return any(pattern.search(text) for pattern in _BYPASS_PATTERNS)
 
 
-def preflight(question: str) -> Optional[str]:
+#: 问题里出现的门店 / 商品编号。`S06`、`P99` 这种写法只可能是编号，
+#: 不至于把"单笔充值满 500 送多少"这类句子误判成实体。
+_ENTITY_CODE = re.compile(r"\b([SP])\s?0*(\d{1,3})\b", re.I)
+
+REFUSAL_UNKNOWN_ENTITY = (
+    "没有 {code} 这个{kind}。库里在册的{kind}是 {known}，"
+    "所以查不到它的信息。请换一个在册编号再问。"
+)
+
+
+def unknown_entity_intent(
+    question: str,
+    stores: Optional[list] = None,
+    products: Optional[list] = None,
+) -> Optional[str]:
+    """问题里点了一个库里根本不存在的门店 / 商品。
+
+    不拦的话模型会先说"没有这家店"，接着很自然地把在册门店的店长挨个列一遍。
+    问的是 A，答了一堆 B，这比不答更糟——所以这里直接挡掉，一个字都不往外说。
+    """
+    if not stores and not products:
+        return None  # 拿不到目录就不猜，宁可不拦
+    for letter, kind, known in (("S", "门店", stores), ("P", "商品", products)):
+        if not known:
+            continue
+        for match in _ENTITY_CODE.finditer(question or ""):
+            if match.group(1).upper() != letter:
+                continue
+            code = "%s%02d" % (letter, int(match.group(2)))
+            if code in known:
+                continue
+            return REFUSAL_UNKNOWN_ENTITY.format(
+                code=code, kind=kind, known="、".join(known)
+            )
+    return None
+
+
+def preflight(
+    question: str,
+    stores: Optional[list] = None,
+    products: Optional[list] = None,
+) -> Optional[str]:
     """返回一句现成的拒答文案；返回 None 表示这是正常业务问题，可以继续。"""
     if destructive_intent(question):
         return REFUSAL_DESTRUCTIVE
@@ -107,4 +148,4 @@ def preflight(question: str) -> Optional[str]:
         return REFUSAL_INJECTION
     if system_probe_intent(question):
         return REFUSAL_SYSTEM_INFO
-    return None
+    return unknown_entity_intent(question, stores, products)
