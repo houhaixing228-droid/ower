@@ -9,7 +9,14 @@ from datetime import date
 from pathlib import Path
 from typing import Optional
 
-SUPPORTED_SUFFIXES = {".md", ".markdown"}
+#: 知识库里 md / txt / html 都有，改 knowledge_base/ 之后重建即可感知。
+SUPPORTED_SUFFIXES = {".md", ".markdown", ".txt", ".html", ".htm"}
+
+#: 与评测脚本 `run_eval.py` 的“可见正文”规则保持一致：
+#: 先去 script/style，再把标签当空格，最后反转义实体。
+#: quote 是逐字校验的，两边算出来的文本必须对得上，否则引用会被判“不是原文”。
+_SCRIPT_RE = re.compile(r"<(script|style)\b.*?</\1>", re.I | re.S)
+_TAG_RE = re.compile(r"<[^>]+>")
 
 #: 文件名开头的编号就是 doc_id，与文件格式无关（契约 §0）。
 _DOC_ID = re.compile(r"^(KB-\d+)")
@@ -79,9 +86,31 @@ class Document:
 _HTML_TITLE = re.compile(r"<title>(.*?)</title>", re.S | re.I)
 
 
+_ENCODINGS = ("utf-8", "utf-8-sig", "gb18030", "big5")
+
+
 def decode_bytes(raw: bytes, path: Path, warnings: list[str]) -> str:
-    """统一按 UTF-8 读。个别老文件里有怪字符，忽略掉就行，不影响检索。"""
-    return raw.decode("utf-8", errors="ignore")
+    """按多种编码试解。
+
+    KB-062 是 GBK 导出的旧 OA 文件，按 UTF-8 加 `errors="ignore"` 读会得到一串替换符，
+    看起来进了索引，其实检索不到任何内容。这里按 UTF-8 → UTF-8(BOM) → GB18030 → Big5
+    依次尝试，并在告警里记下最后用了哪种。
+    """
+    for encoding in _ENCODINGS:
+        try:
+            text = raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+        if encoding != "utf-8":
+            warnings.append("%s 不是 UTF-8，按 %s 解码" % (path.name, encoding))
+        return text
+    warnings.append("%s 试过全部候选编码都解不出来，已按替换符读取" % path.name)
+    return raw.decode("utf-8", errors="replace")
+
+
+def html_to_text(text: str) -> str:
+    """把 HTML 变成可见正文：与评测脚本校验 quote 时用的转换是同一套。"""
+    return html_module.unescape(_TAG_RE.sub(" ", _SCRIPT_RE.sub(" ", text)))
 
 
 def parse_front_matter(text: str) -> tuple[dict, str]:
@@ -170,16 +199,17 @@ def load_document(path: Path) -> Optional[Document]:
     raw = path.read_bytes()
     text = decode_bytes(raw, path, warnings)
     suffix = path.suffix.lower()
-    fmt = {".md": "md", ".markdown": "md", ".txt": "txt"}.get(suffix, "html")
 
     meta: dict = {}
+    fmt = {".md": "md", ".markdown": "md", ".txt": "txt"}.get(suffix, "html")
     if fmt == "md":
         meta, text = parse_front_matter(text)
     elif fmt == "html":
-        # html 直接按文本入库，标签也就那么几个，BM25 自己会忽略。
+        # 一律转成可见正文：留住标签会让 quote 里带着 `<`，逐字校验判不过。
         match_title = _HTML_TITLE.search(text)
         html_title = html_module.unescape(match_title.group(1).strip()) if match_title else ""
         meta = {"title": html_title.split("-")[0].strip() or html_title}
+        text = html_to_text(text)
 
     match = _DOC_ID.match(path.name)
     doc_id = str(meta.get("doc_id") or (match.group(1) if match else "")).strip()
