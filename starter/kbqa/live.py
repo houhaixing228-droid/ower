@@ -23,18 +23,23 @@ MAX_TOOL_ROUNDS = 6
 #: 最后那一轮不再给工具时它更容易这么干。这种不算回答，补一轮提示再来。
 MAX_TEXT_TOOL_NUDGES = 2
 #: 上面那种正文的特征。写得宽松些，不同版本的标记形式都认得住。
+#: 最后一条是裸 SQL：收尾轮模型想查数、手上又没有工具，就把整条查询写进正文
+#: （H03 实测是 `SELECT SUM(qty) ... FROM sales WHERE ...`）。
+#: 给运营看的回答正文里出现 "SELECT ... FROM ..." 只可能是这种情况。
 _RAW_TOOL_CALL = re.compile(
     r"(<\s*\|+\s*DSML|DSML\s*\|+\s*>|invoke\s+name\s*[=:]|function_calls|"
-    r"[\"']tool_calls[\"']|\bparallel_tool_calls\b)",
+    r"[\"']tool_calls[\"']|\bparallel_tool_calls\b|"
+    r"\b(?:SELECT|WITH|EXPLAIN)\b[\s\S]{0,400}?\bFROM\b)",
     re.I,
 )
 
 
 #: 模型把工具调用写成正文时的补正提示。
 _TOOL_CALL_NUDGE = (
-    "你刚才没有给出回答，而是把工具调用的标记写进了正文。"
+    "你刚才没有给出回答，而是把工具调用的内容写进了正文"
+    "（尖括号标记，或者一整条 SELECT 语句）。"
     "要查数据、检索知识库就正常调用工具；要给出结论就直接写中文回答。"
-    "两种都可以，但不要再把尖括号标记写进正文。"
+    "两种都可以，但正文里不要再出现标记，也不要再出现 SQL 语句。"
 )
 
 
@@ -169,6 +174,8 @@ class LiveEngine:
         retrieved: dict[str, list] = {}
         bad_args = 0
         nudges = 0
+        #: 上一轮发现"它想调工具、却把调用写成了正文"，这一轮必须重新给工具。
+        nudge_pending = False
 
         for round_index in range(MAX_TOOL_ROUNDS + 1 + MAX_TEXT_TOOL_NUDGES):
             remaining = deadline - time.perf_counter()
@@ -176,16 +183,23 @@ class LiveEngine:
                 raise LLMError("budget", "整体耗时接近 /api/chat 的时限，已停止调用模型")
             # 最后一轮不给工具：强制它把已经查到的东西说成一段话，
             # 而不是再来一轮检索直到被判“没有收敛”。
-            # 补提示的那几轮要把工具放回去——它想调工具才这么写的。
-            allow_tools = TOOLS if round_index < MAX_TOOL_ROUNDS + nudges else None
+            # 唯一的例外是刚发现它把工具调用写进了正文——那正说明它想调工具，
+            # 这一轮必须把工具放回去。否则"补一轮提示"就成了"再逼它编一次"：
+            # H03 实测连着两轮都拿不到工具，第三次直接把检索到的原文片段当答案发出来。
+            allow_tools = (
+                TOOLS if (round_index < MAX_TOOL_ROUNDS or nudge_pending) else None
+            )
+            nudge_pending = False
             reply = self.client.chat_with_retry(
                 messages, allow_tools, budget=remaining, on_call=trace.llm
             )
             if not reply.tool_calls:
                 if _RAW_TOOL_CALL.search(reply.content or "") and nudges < MAX_TEXT_TOOL_NUDGES:
-                    # 它把工具调用写成了正文（H06 就这样把一段尖括号当答案发出去）。
-                    # 当成"还想调工具"处理：说清楚规矩，再把工具放开重来一轮。
+                    # 它把工具调用写成了正文（H06 那样把一段尖括号、H03 那样把一整条
+                    # SELECT 当答案发出去）。当成"还想调工具"处理：说清楚规矩，
+                    # 再把工具放开重来一轮。
                     nudges += 1
+                    nudge_pending = True
                     trace.step("tool_call_as_text", {"round": round_index})
                     messages.append({"role": "assistant", "content": reply.content})
                     messages.append({"role": "user", "content": _TOOL_CALL_NUDGE})
@@ -193,8 +207,8 @@ class LiveEngine:
                 return self._finalise(
                     plan, reply.content, evidence, retrieved, trace, messages, history
                 )
-            if round_index >= MAX_TOOL_ROUNDS + nudges:
-                # 到了最后还想要工具，就用手上已有的结果收尾。
+            if allow_tools is None:
+                # 这一轮本来就没给它工具，它却还是想调：用手上已有的结果收尾。
                 return self._finalise(
                     plan, reply.content, evidence, retrieved, trace, messages, history
                 )
