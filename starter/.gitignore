@@ -3,7 +3,11 @@ var/
 __pycache__/
 *.pyc
 .pytest_cache/
-.cache/
+# 索引缓存：index.json 是随包发出的预建索引，例外保留。
+# 评审换掉 knowledge_base/ 后执行 make rebuild 会重算；即使没重建，
+# load_index 发现内容键对不上也会自动重建，不会拿旧索引答新文档。
+.cache/*
+!.cache/index.json
 # Key 不入库：开发时把 .env.example 复制成 .env 再填
 .env
 .env.local
