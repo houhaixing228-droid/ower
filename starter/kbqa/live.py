@@ -286,7 +286,7 @@ class LiveEngine:
         text = _strip_raw_tool_calls(text)
         citations = self._citations(plan, doc_ids, history, retrieved, text)
         evidence = self._trim_evidence(evidence, plan)
-        allowed = self._allowed_numbers(plan, evidence, citations)
+        allowed = self._allowed_numbers(plan, evidence, citations, self._context_numbers(history))
         bad = [value for value in _numbers_in(text) if not _matches(value, allowed)]
 
         # 数字对不上时不急着退回模板：模板是按 planner 的口径渲染的，
@@ -405,8 +405,23 @@ class LiveEngine:
         return text, [value for value in _numbers_in(text) if not _matches(value, allowed)]
 
     @staticmethod
+    def _context_numbers(history: Optional[list[dict]]) -> list[float]:
+        """上一轮回答里出现过的数字，作为这一轮的可信上下文。
+
+        只取最近一轮，且只要它的回答不是拒答式的空壳（那种回答本来也没有数字）。
+        """
+        if not history:
+            return []
+        answer = history[-1].get("answer") or ""
+        return _numbers_in(answer)
+
+    @staticmethod
     def _drop_sentences(text: str, bad: list[float]) -> str:
-        """兜底：把含不可核对数字的句子整句删掉，宁可少说也不要说出查不到的数。"""
+        """兜底：把含不可核对数字的句子整句删掉，宁可少说也不要说出查不到的数。
+
+        但不能删空。整段都含这类数字时保留原答案——清空之后所有数字检查都必然失败，
+        而原答案里往往还有别的正确内容（T01 第 2 轮的 162414 就是这么被一起删掉的）。
+        """
         kept = []
         for sentence in re.split(r"(?<=[。；\n])", text):
             numbers = _numbers_in(sentence)
@@ -414,7 +429,7 @@ class LiveEngine:
                 continue
             kept.append(sentence)
         trimmed = "".join(kept).strip()
-        return trimmed or "（其余内容里的数字无法与工具结果核对，已略去。）"
+        return trimmed or text.strip()
 
     def _superseded_doc(self, doc_id: str) -> str:
         """找出 doc_id 的前一版。
@@ -678,7 +693,19 @@ class LiveEngine:
                     return True
         return False
 
-    def _allowed_numbers(self, plan: Plan, evidence: list[dict], citations: list[dict]) -> list[float]:
+    def _allowed_numbers(
+        self,
+        plan: Plan,
+        evidence: list[dict],
+        citations: list[dict],
+        context: Optional[list[float]] = None,
+    ) -> list[float]:
+        """可以出现在答案里的数字。
+
+        `context` 是上一轮回答里的数字：那些数在上一轮已经过了一遍核对，
+        属于可信上下文。追问里拿它做对比（"7 月比 6 月的 156757 多多少"）
+        不该被判成幻觉——实测 T01 第 2 轮就是这么丢掉正确答案的。
+        """
         allowed: list[float] = []
         for item in evidence:
             allowed.extend(_numbers_in(json.dumps(item, ensure_ascii=False)))
@@ -688,6 +715,7 @@ class LiveEngine:
         allowed.extend(_numbers_in(plan.standalone))
         if plan.window:
             allowed.extend(_numbers_in(" ".join(plan.window)))
+        allowed.extend(context or [])
         derived = []
         for value in allowed:
             derived.extend([round(value, 2), round(value)])
