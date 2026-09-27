@@ -539,6 +539,7 @@ class LiveEngine:
             if canonical not in seen:
                 seen.append(canonical)
         citations = []
+        asks_why = "reason" in focus_kinds(question)
         for doc_id in seen[:3]:
             if doc_id not in self.answerer.retriever.index.docs_meta:
                 continue
@@ -547,7 +548,15 @@ class LiveEngine:
             )
             if not ranked:
                 continue
-            citation = self.answerer.facts.cite(doc_id, ranked[0][1].text)
+            unit = ranked[0][1]
+            if asks_why:
+                # 问“为什么”时，挑中的往往只是那句决议（“会议决定下架……”），
+                # 真正回答原因的那句在旁边。mock 路径一直是这么做的
+                # （answerer.py 里调 extend_to_cause），live 路径漏了：
+                # C07 的 35% 就在原因句里，不并进来，答案又没复述这个数时，
+                # 答案和 quote 两头都查不到 35，评测判缺失。
+                unit = self.answerer.facts.extend_to_cause(unit)
+            citation = self.answerer.facts.cite(doc_id, unit.text)
             if citation:
                 citations.append(citation)
         return citations
