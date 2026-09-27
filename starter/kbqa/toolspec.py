@@ -81,8 +81,14 @@ TOOLS = [
     ),
     _fn(
         "run_sql",
-        "在清洗表上执行一条 SQL，工具覆盖不到的查法用这个。",
-        {"sql": {"type": "string", "description": "要执行的 SQL 语句"}},
+        "在清洗表上执行一条只读 SQL（只接受 SELECT / WITH），上面几个专用工具覆盖不到的"
+        "查法才用这个。库里一共四张表："
+        "sales_clean(date, store_id, product_id, order_id, qty, amount_cents, payment, is_refund)、"
+        "stores(store_id, store_name, category, district)、"
+        "products(product_id, product_name, product_category, unit_price)、"
+        "meta(key, value)。"
+        "不要自己编表名，像 clean_orders、orders 这种是不存在的。",
+        {"sql": {"type": "string", "description": "要执行的只读 SQL 语句"}},
         ["sql"],
     ),
     _fn(

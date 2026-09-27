@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 import threading
 from datetime import date, timedelta
@@ -15,6 +16,54 @@ METRIC_FIELDS = ("net_revenue", "refund_amount", "orders", "aov", "qty")
 
 #: 一条连接出错后最多重开几次再放弃。
 _DB_RETRIES = 1
+
+#: 会出现在模型写出来的 SQL 里的写入动作。命中就拒绝执行。
+_WRITE_VERBS = (
+    "insert", "update", "delete", "drop", "create", "alter", "replace",
+    "truncate", "attach", "detach", "pragma", "vacuum", "reindex",
+)
+
+
+def _sql_is_readonly(sql: str) -> tuple[bool, str]:
+    """判断一条 SQL 是不是只读的，返回 (能不能执行, 拒绝理由)。"""
+    text = (sql or "").strip()
+    if not text:
+        return False, "SQL 是空的"
+    # 逐条拆开看：sqlite3 一次只执行一条，但 `SELECT 1; DELETE ...` 在别的实现里
+    # 是能跑的，所以这里自己按分号切，每段都得是只读的。
+    for piece in re.split(r";", text):
+        stripped = _SQL_COMMENT.sub(" ", piece).strip().strip(";").strip()
+        if not stripped:
+            continue
+        head = stripped.split()[0].lower()
+        if head not in ("select", "with", "explain"):
+            return False, "只允许 SELECT / WITH 查询，收到的是 %s" % stripped.split()[0]
+        for verb in _WRITE_VERBS:
+            # 按词边界匹配，避免把 "selected" 当成 select 之外的东西
+            if re.search(r"\b%s\b" % verb, stripped, re.I):
+                return False, "只允许 SELECT / WITH 查询，这条里有 %s" % verb.upper()
+    return True, ""
+
+
+#: SQL 里的行注释与块注释，判断语句类型之前先去掉。
+_SQL_COMMENT = re.compile(r"(--[^\n]*|/\*.*?\*/)", re.S)
+
+
+def _sql_error_hint(tools: "DataTools", exc: sqlite3.Error) -> str:
+    """把 sqlite 的报错翻成模型看得懂、能照着改的话。"""
+    try:
+        tables = [
+            row[0]
+            for row in tools.query(
+                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+            ).fetchall()
+        ]
+    except sqlite3.Error:
+        tables = []
+    hint = "SQL 执行失败：%s" % exc
+    if tables:
+        hint += "。库里的表只有：%s，请改用它" % "、".join(tables)
+    return hint
 
 
 def yuan(cents: int) -> float:
@@ -95,10 +144,24 @@ class DataTools:
         return int(self.query("SELECT COUNT(*) FROM sales_clean").fetchone()[0])
 
     def run_sql(self, sql: str) -> dict:
-        """执行一条 SQL。工具覆盖不到的查法，让模型自己写。"""
-        cursor = self.query(sql)
+        """执行一条 SQL。工具覆盖不到的查法，让模型自己写。
+
+        两条硬规矩，都是实测换来的：
+        1. 只放行 SELECT / WITH。这个工具原来跑完还要 commit，于是模型（或被注入的
+           模型）生成的 DELETE 会被真的执行掉——安全闸门只挡用户问句，挡不住模型
+           自己写的语句。分号后面再挂一条 DELETE 也算写入，一并拦掉。
+        2. SQL 出错时返回 error 而不是抛异常。模型会编造表名（clean_orders），
+           抛出去会一路冒到最外层，把整条回答变成 refusal；
+           给一句"没有这张表，可用的是 sales_clean…"，它下一轮就能改对。
+        """
+        verdict = _sql_is_readonly(sql)
+        if not verdict[0]:
+            return {"error": verdict[1], "sql": sql}
+        try:
+            cursor = self.query(sql)
+        except sqlite3.Error as exc:
+            return {"error": _sql_error_hint(self, exc), "sql": sql}
         rows = [dict(row) for row in cursor.fetchall()] if cursor.description else []
-        self.conn.commit()
         return {"sql": sql, "rows": rows[:50], "row_count": len(rows)}
 
     def stores(self) -> list[dict]:

@@ -47,6 +47,9 @@ SYSTEM_PROMPT = """你是一家连锁餐饮公司的经营分析助手，服务�
 关于“目标”“达标”“完成率”“为什么”：
 - 目标值、为什么停售、什么时候停业这类内容只存在于知识库的活动方案、通知、纪要里，
   数据库里查不到。**必须先用 search_kb 找到写有目标值或原因的那篇文档**，再回答达标与否。
+- 问“达标了吗”“完成情况如何”时，回答里**必须同时出现三样**：数据库查到的实际值、
+  文档里写的目标值、以及达标/未达标的结论。只说结论不给两个数字等于没答。
+  商品的目标销量按商品编号查（“冷萃乌龙茶”这类新品先用 search_kb 或商品表确认编号）。
 
 回答硬要求：
 - 数量和金额一律写**阿拉伯数字**：写 50、689、13524.00，不要写“五十”“约 1.3 万”。
@@ -109,10 +112,14 @@ class LiveEngine:
                 messages, allow_tools, budget=remaining, on_call=trace.llm
             )
             if not reply.tool_calls:
-                return self._finalise(plan, reply.content, evidence, retrieved, trace, messages)
+                return self._finalise(
+                    plan, reply.content, evidence, retrieved, trace, messages, history
+                )
             if round_index == MAX_TOOL_ROUNDS:
                 # 到了最后还想要工具，就用手上已有的结果收尾。
-                return self._finalise(plan, reply.content, evidence, retrieved, trace, messages)
+                return self._finalise(
+                    plan, reply.content, evidence, retrieved, trace, messages, history
+                )
             # D8：assistant 消息整条追加，含 reasoning_content，否则下一轮 400。
             messages.append(reply.message)
             round_bad = 0
@@ -190,13 +197,14 @@ class LiveEngine:
         retrieved: dict,
         trace,
         messages: Optional[list[dict]] = None,
+        history: Optional[list[dict]] = None,
     ) -> Answer:
         doc_ids = []
         for match in _DOC_MARK.finditer(content):
             if match.group(1) not in doc_ids:
                 doc_ids.append(match.group(1))
         text = _DOC_MARK.sub("", content).strip()
-        citations = self._citations(plan, doc_ids)
+        citations = self._citations(plan, doc_ids, history)
         evidence = self._trim_evidence(evidence, plan)
         allowed = self._allowed_numbers(plan, evidence, citations)
         bad = [value for value in _numbers_in(text) if not _matches(value, allowed)]
@@ -322,7 +330,41 @@ class LiveEngine:
         trimmed = "".join(kept).strip()
         return trimmed or "（其余内容里的数字无法与工具结果核对，已略去。）"
 
-    def _citations(self, plan: Plan, doc_ids: list[str]) -> list[dict]:
+    def _superseded_doc(self, doc_id: str) -> str:
+        """找出 doc_id 的前一版。
+
+        库里 `superseded_by` 是正向的：KB-010 写着"我被 KB-011 取代"。
+        追问"那 6 月的时候呢"要引的是 KB-010，所以这里反向找一遍。
+        找不到前身（或被好几个人取代）就返回原样。
+        """
+        index = self.answerer.retriever.index
+        matches = [
+            other
+            for other, meta in index.docs_meta.items()
+            if meta.get("superseded_by") == doc_id
+        ]
+        return matches[0] if len(matches) == 1 else doc_id
+
+    def _citation_fallback(self, plan: Plan, history: Optional[list[dict]]) -> list[str]:
+        """追问里模型没标编号时，从上一轮的引用推出这一轮该引谁。
+
+        典型是 V03：第 1 轮引了现行的 KB-011，第 2 轮问"那 6 月的时候呢"——
+        问的是过去，所以该引 KB-011 的前身 KB-010，而不是 KB-011 自己。
+        """
+        if not history:
+            return []
+        last = history[-1].get("citations") or []
+        if not last:
+            return []
+        doc_id = last[0].get("doc_id") if isinstance(last[0], dict) else None
+        if not doc_id:
+            return []
+        question = plan.standalone or plan.question
+        if self._asks_about_past(question):
+            return [self._superseded_doc(doc_id)]
+        return [doc_id]
+
+    def _citations(self, plan: Plan, doc_ids: list[str], history: Optional[list[dict]] = None) -> list[dict]:
         """引用由代码生成：从模型点名的文档里挑最相关的一句原文，保证逐字可核对。
 
         问“赔了多少”“目标多少”“毛利率多少”这类带数的问题时，优先挑**带数字**的那一句：
@@ -332,6 +374,8 @@ class LiveEngine:
         query = plan.search_query or plan.standalone
         wants_value = _wants_value(plan.standalone or plan.question)
         question = plan.standalone or plan.question
+        if not doc_ids:
+            doc_ids = self._citation_fallback(plan, history)
         seen: list[str] = []
         for doc_id in doc_ids:
             # 版本择优：问"现在/今年"时，引到归档或已废止的那版就是引错了。
@@ -483,7 +527,10 @@ def _format_number(value: float) -> str:
 #: 挑引用要优先挑带数字的那句原文，否则 quote 里没数，核对答案时等于没引。
 _WANTS_VALUE = (
     re.compile(r"(多少|几[个天件单笔元]|多少钱|多大量)"),
-    re.compile(r"(目标|标准|阈值|上限|下限|比例|费率|毛利率|占比|预算|赔付|赔了|罚款)"),
+    re.compile(
+        r"(目标|标准|阈值|上限|下限|比例|费率|毛利率|占比|预算|赔付|赔了|罚款|"
+        r"达标|达成|完成率|完成情况|销量|卖了多少)"
+    ),
 )
 
 

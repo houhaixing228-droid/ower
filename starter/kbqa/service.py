@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sqlite3
 import time
 from typing import Any, Optional
 
@@ -161,6 +162,10 @@ class Service:
             return getattr(self.tools, name)(**cleaned)
         except (TypeError, ValueError) as exc:
             return {"error": "工具 %s 执行失败：%s" % (name, exc)}
+        except sqlite3.Error as exc:
+            # 工具报错说到底是"这一次查法不对"，把话带给模型让它换一个查法就行；
+            # 让它冒到最外层会把整条回答变成 refusal（H04 就是这么丢的 3 分）。
+            return {"error": "工具 %s 执行失败：%s，请换一种查法或换一个工具" % (name, exc)}
 
     # -- 问答 -------------------------------------------------------------------
 
@@ -206,6 +211,9 @@ class Service:
                     "slots": plan.slots,
                     "answer": answer.answer,
                     "answer_type": answer.answer_type,
+                    # 追问时要用：模型这一轮没标编号的话，靠上一轮引的文档
+                    # 反推这一轮该引谁（V03 第 2 轮）。
+                    "citations": answer.citations,
                 },
             )
             return answer
