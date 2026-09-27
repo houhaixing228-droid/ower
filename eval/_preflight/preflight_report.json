@@ -1,0 +1,1036 @@
+{
+  "tool": "llm_gateway.py",
+  "version": "2.0.0",
+  "generated_at": "2026-09-27T20:26:36.297+08:00",
+  "service_url": "http://127.0.0.1:8000",
+  "env": {
+    "LLM_BASE_URL": "http://127.0.0.1:50119/ds-gw",
+    "LLM_API_KEY": "preflight-key-3b9c1f",
+    "LLM_MODEL": "preflight-model-7f3a"
+  },
+  "reasoning_marker": "RSN-17ff937b126e",
+  "passed": true,
+  "failed_checks": [],
+  "skipped_checks": [],
+  "checks": [
+    {
+      "id": "P1",
+      "title": "服务确实把请求发到了注入的 LLM_BASE_URL（含路径前缀）",
+      "status": "PASS",
+      "reason": "共观察到 60 次 POST /ds-gw/chat/completions。",
+      "evidence": {
+        "expected_base_url": "http://127.0.0.1:50119/ds-gw",
+        "expected_path": "/ds-gw/chat/completions",
+        "chat_completions_requests": 60,
+        "per_scenario": {
+          "normal": 6,
+          "thinking_starved": 6,
+          "empty_content": 4,
+          "json_empty": 6,
+          "bad_tool_args": 4,
+          "content_filter": 2,
+          "insufficient_resource": 4,
+          "aborted": 2,
+          "http_401": 2,
+          "http_402": 2,
+          "http_422": 2,
+          "http_429": 4,
+          "http_500": 4,
+          "http_503": 4,
+          "slow": 6,
+          "hang": 2
+        }
+      }
+    },
+    {
+      "id": "P2",
+      "title": "请求里的 model 等于注入的 LLM_MODEL",
+      "status": "PASS",
+      "reason": "全部请求都用了 preflight-model-7f3a。",
+      "evidence": {
+        "expected": "preflight-model-7f3a",
+        "seen": {
+          "preflight-model-7f3a": 60
+        }
+      }
+    },
+    {
+      "id": "P3",
+      "title": "注入的 Key 以 Authorization: Bearer 发送",
+      "status": "PASS",
+      "reason": "全部请求都带了正确的 Bearer Key。",
+      "evidence": {
+        "requests": 60,
+        "missing_authorization_in": [],
+        "non_bearer_schemes": [],
+        "key_mismatch_in": []
+      }
+    },
+    {
+      "id": "P4",
+      "title": "只用了 DeepSeek 文档列出的顶层参数",
+      "status": "PASS",
+      "reason": "只出现了 DeepSeek 文档列出的顶层参数。",
+      "evidence": {
+        "documented": [
+          "frequency_penalty",
+          "logprobs",
+          "max_tokens",
+          "messages",
+          "model",
+          "presence_penalty",
+          "reasoning_effort",
+          "response_format",
+          "stop",
+          "stream",
+          "stream_options",
+          "temperature",
+          "thinking",
+          "tool_choice",
+          "tools",
+          "top_logprobs",
+          "top_p",
+          "user_id"
+        ],
+        "extra_params": {}
+      }
+    },
+    {
+      "id": "P5",
+      "title": "max_tokens 不设，或不小于 2048",
+      "status": "PASS",
+      "reason": "max_tokens 都不小于 2048。",
+      "evidence": {
+        "min_required": 2048,
+        "values_seen": [
+          "4096"
+        ],
+        "offenders": []
+      }
+    },
+    {
+      "id": "P6",
+      "title": "没有访问 {prefix}/chat/completions 之外的任何路径",
+      "status": "PASS",
+      "reason": "只访问了 POST /ds-gw/chat/completions，没有碰任何别的路径。",
+      "evidence": {
+        "allowed": "POST /ds-gw/chat/completions",
+        "requests_seen": 60,
+        "other_paths": []
+      }
+    },
+    {
+      "id": "P7",
+      "title": "工具定义规范，且每一个工具调用都以 role=tool + tool_call_id 回传",
+      "status": "PASS",
+      "reason": "工具定义规范，44 个工具调用的结果都正确回传了。",
+      "evidence": {
+        "declared_tools": true,
+        "announced_tool_calls": 44,
+        "returned_tool_results": 44,
+        "problems": []
+      }
+    },
+    {
+      "id": "P8",
+      "title": "每个场景下 /api/chat 都返回 HTTP 200 与字段完整的合法 JSON",
+      "status": "PASS",
+      "reason": "32 次问答全部返回 200 和字段完整的 JSON。",
+      "evidence": {
+        "attempts": 32,
+        "failures": []
+      }
+    },
+    {
+      "id": "P9",
+      "title": "模型不可用时给出结构化 refusal，answer 从不是空串",
+      "status": "PASS",
+      "reason": "模型不可用的场景下都给了结构化 refusal 或有据可查的回答，answer 从不是空串。",
+      "evidence": {
+        "failing_scenarios": [
+          "aborted",
+          "bad_tool_args",
+          "content_filter",
+          "empty_content",
+          "hang",
+          "http_401",
+          "http_402",
+          "http_422",
+          "http_429",
+          "http_500",
+          "http_503",
+          "insufficient_resource"
+        ],
+        "checked": 24,
+        "skipped_invalid_responses": 0,
+        "failure_marker": "FAILOUT-2f6cbc4c76cf",
+        "declared_tools": [
+          "by_store",
+          "by_store_category",
+          "compare_periods",
+          "daily_metrics",
+          "payment_mix",
+          "query_metrics",
+          "run_sql",
+          "search_kb",
+          "top_products",
+          "unit_price_check"
+        ],
+        "problems": []
+      }
+    },
+    {
+      "id": "P10",
+      "title": "思考内容没有漏进 answer / citations / data_evidence",
+      "status": "PASS",
+      "reason": "32 次回答里，思考标记都没有出现在任何对外字段里。",
+      "evidence": {
+        "marker": "RSN-17ff937b126e",
+        "inspected_answers": 32,
+        "responses_carrying_the_marker": 40,
+        "requests_with_thinking_disabled": 0,
+        "leaks": []
+      }
+    },
+    {
+      "id": "P11",
+      "title": "/api/chat 在时限内返回（含长时间无响应的场景）",
+      "status": "PASS",
+      "reason": "最慢的一次是 120.06 秒，都在 180 秒以内。",
+      "evidence": {
+        "limit_seconds": 180.0,
+        "timed_attempts": 32,
+        "slowest": [
+          {
+            "scenario": "hang",
+            "seconds": 120.06
+          },
+          {
+            "scenario": "hang",
+            "seconds": 120.06
+          },
+          {
+            "scenario": "slow",
+            "seconds": 18.28
+          },
+          {
+            "scenario": "slow",
+            "seconds": 18.23
+          },
+          {
+            "scenario": "http_500",
+            "seconds": 0.66
+          }
+        ],
+        "offenders": [],
+        "unreachable_attempts": []
+      }
+    },
+    {
+      "id": "P12",
+      "title": "注入环境变量后 /api/health 报告 llm_mode = live",
+      "status": "PASS",
+      "reason": "llm_mode = live。",
+      "evidence": {
+        "status": 200,
+        "error": null,
+        "body": {
+          "status": "ok",
+          "llm_mode": "live",
+          "kb_docs": 35,
+          "kb_chunks": 154,
+          "valid_sales_rows": 18290,
+          "today": "2026-09-01",
+          "data_period": {
+            "start": "2026-05-01",
+            "end": "2026-08-31"
+          },
+          "cleaning_report": {
+            "raw_rows": 18628,
+            "removed": {
+              "1_unparseable_date": 8,
+              "2_empty_amount": 150,
+              "3_qty_le_zero": 30,
+              "4_store_not_in_stores": 10,
+              "5_product_not_in_products": 40,
+              "6_duplicate_row": 100,
+              "note_unparseable_amount": 0
+            },
+            "kept_rows": 18290,
+            "kept_sales_rows": 18196,
+            "kept_refund_rows": 94
+          },
+          "index_key": "e74f0714b92f",
+          "kb_warnings": [
+            "KB-062_旧OA导出_营业时间调整通知.txt 不是 UTF-8，按 gb18030 解码",
+            "跳过没有 KB 编号的文件：README.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "P13",
+      "title": "多轮工具调用之间 reasoning_content 原样回传（没有触发 400）",
+      "status": "PASS",
+      "reason": "18 次多轮请求都原样回传了 reasoning_content。",
+      "evidence": {
+        "requests_rejected_with_400": [],
+        "requests_echoing_reasoning": 18,
+        "requests_with_thinking_disabled": 0
+      }
+    },
+    {
+      "id": "P14",
+      "title": "保持连接的空行与 SSE 注释没有把服务弄坏",
+      "status": "PASS",
+      "reason": "正文前的空行和 SSE 的 `: keep-alive` 注释都被正确跳过了，slow 场景照常给出回答。",
+      "evidence": {
+        "normal_answered": true,
+        "slow_answered": true,
+        "slow_statuses": [
+          200,
+          200
+        ],
+        "slow_answer_types": [
+          "data",
+          "data"
+        ]
+      }
+    }
+  ],
+  "health": {
+    "status": 200,
+    "error": null,
+    "body": {
+      "status": "ok",
+      "llm_mode": "live",
+      "kb_docs": 35,
+      "kb_chunks": 154,
+      "valid_sales_rows": 18290,
+      "today": "2026-09-01",
+      "data_period": {
+        "start": "2026-05-01",
+        "end": "2026-08-31"
+      },
+      "cleaning_report": {
+        "raw_rows": 18628,
+        "removed": {
+          "1_unparseable_date": 8,
+          "2_empty_amount": 150,
+          "3_qty_le_zero": 30,
+          "4_store_not_in_stores": 10,
+          "5_product_not_in_products": 40,
+          "6_duplicate_row": 100,
+          "note_unparseable_amount": 0
+        },
+        "kept_rows": 18290,
+        "kept_sales_rows": 18196,
+        "kept_refund_rows": 94
+      },
+      "index_key": "e74f0714b92f",
+      "kb_warnings": [
+        "KB-062_旧OA导出_营业时间调整通知.txt 不是 UTF-8，按 gb18030 解码",
+        "跳过没有 KB 编号的文件：README.md"
+      ]
+    }
+  },
+  "scenarios": [
+    {
+      "scenario": "normal",
+      "llm_requests": 6,
+      "attempts": [
+        {
+          "question": "你们的退款规则是怎么规定的？",
+          "session_id": "preflight-normal-0-474c844d",
+          "status": 200,
+          "elapsed_seconds": 0.25,
+          "error": null,
+          "body": {
+            "answer": "这是预检假模型的固定回答，具体数值请以工具结果为准。",
+            "answer_type": "data",
+            "citations": [],
+            "data_evidence": [
+              {
+                "tool": "query_metrics",
+                "params": {
+                  "start": "2026-06-01",
+                  "end": "2026-06-28"
+                },
+                "result": {
+                  "start": "2026-06-01",
+                  "end": "2026-06-28",
+                  "store_id": null,
+                  "product_id": null,
+                  "net_revenue": 147211.0,
+                  "refund_amount": 839.0,
+                  "orders": 4049,
+                  "aov": 36.36,
+                  "qty": 6092
+                }
+              }
+            ],
+            "trace_id": "t-20260901-0001"
+          }
+        },
+        {
+          "question": "最近一段时间的整体经营情况怎么样？",
+          "session_id": "preflight-normal-1-cd00e929",
+          "status": 200,
+          "elapsed_seconds": 0.157,
+          "error": null,
+          "body": {
+            "answer": "这是预检假模型的固定回答，具体数值请以工具结果为准。",
+            "answer_type": "data",
+            "citations": [],
+            "data_evidence": [
+              {
+                "tool": "query_metrics",
+                "params": {
+                  "start": "2026-06-01",
+                  "end": "2026-06-28"
+                },
+                "result": {
+                  "start": "2026-06-01",
+                  "end": "2026-06-28",
+                  "store_id": null,
+                  "product_id": null,
+                  "net_revenue": 147211.0,
+                  "refund_amount": 839.0,
+                  "orders": 4049,
+                  "aov": 36.36,
+                  "qty": 6092
+                }
+              }
+            ],
+            "trace_id": "t-20260901-0002"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "thinking_starved",
+      "llm_requests": 6,
+      "attempts": [
+        {
+          "question": "你们的退款规则是怎么规定的？",
+          "session_id": "preflight-thinking_starved-0-c6948219",
+          "status": 200,
+          "elapsed_seconds": 0.234,
+          "error": null,
+          "body": {
+            "answer": "这是预检假模型的固定回答，具体数值请以工具结果为准。",
+            "answer_type": "data",
+            "citations": [],
+            "data_evidence": [
+              {
+                "tool": "query_metrics",
+                "params": {
+                  "start": "2026-06-01",
+                  "end": "2026-06-28"
+                },
+                "result": {
+                  "start": "2026-06-01",
+                  "end": "2026-06-28",
+                  "store_id": null,
+                  "product_id": null,
+                  "net_revenue": 147211.0,
+                  "refund_amount": 839.0,
+                  "orders": 4049,
+                  "aov": 36.36,
+                  "qty": 6092
+                }
+              }
+            ],
+            "trace_id": "t-20260901-0003"
+          }
+        },
+        {
+          "question": "最近一段时间的整体经营情况怎么样？",
+          "session_id": "preflight-thinking_starved-1-56a3162a",
+          "status": 200,
+          "elapsed_seconds": 0.172,
+          "error": null,
+          "body": {
+            "answer": "这是预检假模型的固定回答，具体数值请以工具结果为准。",
+            "answer_type": "data",
+            "citations": [],
+            "data_evidence": [
+              {
+                "tool": "query_metrics",
+                "params": {
+                  "start": "2026-06-01",
+                  "end": "2026-06-28"
+                },
+                "result": {
+                  "start": "2026-06-01",
+                  "end": "2026-06-28",
+                  "store_id": null,
+                  "product_id": null,
+                  "net_revenue": 147211.0,
+                  "refund_amount": 839.0,
+                  "orders": 4049,
+                  "aov": 36.36,
+                  "qty": 6092
+                }
+              }
+            ],
+            "trace_id": "t-20260901-0004"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "empty_content",
+      "llm_requests": 4,
+      "attempts": [
+        {
+          "question": "你们的退款规则是怎么规定的？",
+          "session_id": "preflight-empty_content-0-b3a9bf72",
+          "status": 200,
+          "elapsed_seconds": 0.609,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（返回了空回答），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0005"
+          }
+        },
+        {
+          "question": "最近一段时间的整体经营情况怎么样？",
+          "session_id": "preflight-empty_content-1-39734c43",
+          "status": 200,
+          "elapsed_seconds": 0.625,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（返回了空回答），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0006"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "json_empty",
+      "llm_requests": 6,
+      "attempts": [
+        {
+          "question": "你们的退款规则是怎么规定的？",
+          "session_id": "preflight-json_empty-0-6b6b05ea",
+          "status": 200,
+          "elapsed_seconds": 0.156,
+          "error": null,
+          "body": {
+            "answer": "这是预检假模型的固定回答，具体数值请以工具结果为准。",
+            "answer_type": "data",
+            "citations": [],
+            "data_evidence": [
+              {
+                "tool": "query_metrics",
+                "params": {
+                  "start": "2026-06-01",
+                  "end": "2026-06-28"
+                },
+                "result": {
+                  "start": "2026-06-01",
+                  "end": "2026-06-28",
+                  "store_id": null,
+                  "product_id": null,
+                  "net_revenue": 147211.0,
+                  "refund_amount": 839.0,
+                  "orders": 4049,
+                  "aov": 36.36,
+                  "qty": 6092
+                }
+              }
+            ],
+            "trace_id": "t-20260901-0007"
+          }
+        },
+        {
+          "question": "最近一段时间的整体经营情况怎么样？",
+          "session_id": "preflight-json_empty-1-74e1b937",
+          "status": 200,
+          "elapsed_seconds": 0.172,
+          "error": null,
+          "body": {
+            "answer": "这是预检假模型的固定回答，具体数值请以工具结果为准。",
+            "answer_type": "data",
+            "citations": [],
+            "data_evidence": [
+              {
+                "tool": "query_metrics",
+                "params": {
+                  "start": "2026-06-01",
+                  "end": "2026-06-28"
+                },
+                "result": {
+                  "start": "2026-06-01",
+                  "end": "2026-06-28",
+                  "store_id": null,
+                  "product_id": null,
+                  "net_revenue": 147211.0,
+                  "refund_amount": 839.0,
+                  "orders": 4049,
+                  "aov": 36.36,
+                  "qty": 6092
+                }
+              }
+            ],
+            "trace_id": "t-20260901-0008"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "bad_tool_args",
+      "llm_requests": 4,
+      "attempts": [
+        {
+          "question": "你们的退款规则是怎么规定的？",
+          "session_id": "preflight-bad_tool_args-0-5a0055d5",
+          "status": 200,
+          "elapsed_seconds": 0.078,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（工具参数无法解析），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0009"
+          }
+        },
+        {
+          "question": "最近一段时间的整体经营情况怎么样？",
+          "session_id": "preflight-bad_tool_args-1-b92862cb",
+          "status": 200,
+          "elapsed_seconds": 0.11,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（工具参数无法解析），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0010"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "content_filter",
+      "llm_requests": 2,
+      "attempts": [
+        {
+          "question": "你们的退款规则是怎么规定的？",
+          "session_id": "preflight-content_filter-0-8c78d53d",
+          "status": 200,
+          "elapsed_seconds": 0.047,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（被内容过滤拦截），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0011"
+          }
+        },
+        {
+          "question": "最近一段时间的整体经营情况怎么样？",
+          "session_id": "preflight-content_filter-1-ecd95175",
+          "status": 200,
+          "elapsed_seconds": 0.078,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（被内容过滤拦截），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0012"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "insufficient_resource",
+      "llm_requests": 4,
+      "attempts": [
+        {
+          "question": "你们的退款规则是怎么规定的？",
+          "session_id": "preflight-insufficient_resource-0-0902d7a9",
+          "status": 200,
+          "elapsed_seconds": 0.594,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（服务端资源不足），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0013"
+          }
+        },
+        {
+          "question": "最近一段时间的整体经营情况怎么样？",
+          "session_id": "preflight-insufficient_resource-1-9f8b5682",
+          "status": 200,
+          "elapsed_seconds": 0.625,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（服务端资源不足），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0014"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "aborted",
+      "llm_requests": 2,
+      "attempts": [
+        {
+          "question": "你们的退款规则是怎么规定的？",
+          "session_id": "preflight-aborted-0-f0a7af1c",
+          "status": 200,
+          "elapsed_seconds": 0.046,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（请求被中止），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0015"
+          }
+        },
+        {
+          "question": "最近一段时间的整体经营情况怎么样？",
+          "session_id": "preflight-aborted-1-e36cf056",
+          "status": 200,
+          "elapsed_seconds": 0.047,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（请求被中止），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0016"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "http_401",
+      "llm_requests": 2,
+      "attempts": [
+        {
+          "question": "你们的退款规则是怎么规定的？",
+          "session_id": "preflight-http_401-0-86a7ce65",
+          "status": 200,
+          "elapsed_seconds": 0.063,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（接口返回错误码 401），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0017"
+          }
+        },
+        {
+          "question": "最近一段时间的整体经营情况怎么样？",
+          "session_id": "preflight-http_401-1-8412ee13",
+          "status": 200,
+          "elapsed_seconds": 0.062,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（接口返回错误码 401），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0018"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "http_402",
+      "llm_requests": 2,
+      "attempts": [
+        {
+          "question": "你们的退款规则是怎么规定的？",
+          "session_id": "preflight-http_402-0-75037a66",
+          "status": 200,
+          "elapsed_seconds": 0.063,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（接口返回错误码 402），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0019"
+          }
+        },
+        {
+          "question": "最近一段时间的整体经营情况怎么样？",
+          "session_id": "preflight-http_402-1-5b2a88a2",
+          "status": 200,
+          "elapsed_seconds": 0.062,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（接口返回错误码 402），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0020"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "http_422",
+      "llm_requests": 2,
+      "attempts": [
+        {
+          "question": "你们的退款规则是怎么规定的？",
+          "session_id": "preflight-http_422-0-45b0c6ef",
+          "status": 200,
+          "elapsed_seconds": 0.078,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（接口返回错误码 422），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0021"
+          }
+        },
+        {
+          "question": "最近一段时间的整体经营情况怎么样？",
+          "session_id": "preflight-http_422-1-4e717f74",
+          "status": 200,
+          "elapsed_seconds": 0.079,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（接口返回错误码 422），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0022"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "http_429",
+      "llm_requests": 4,
+      "attempts": [
+        {
+          "question": "你们的退款规则是怎么规定的？",
+          "session_id": "preflight-http_429-0-757a9054",
+          "status": 200,
+          "elapsed_seconds": 0.625,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（接口返回错误码 429），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0023"
+          }
+        },
+        {
+          "question": "最近一段时间的整体经营情况怎么样？",
+          "session_id": "preflight-http_429-1-0334a633",
+          "status": 200,
+          "elapsed_seconds": 0.609,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（接口返回错误码 429），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0024"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "http_500",
+      "llm_requests": 4,
+      "attempts": [
+        {
+          "question": "你们的退款规则是怎么规定的？",
+          "session_id": "preflight-http_500-0-ce08bc15",
+          "status": 200,
+          "elapsed_seconds": 0.594,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（接口返回错误码 500），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0025"
+          }
+        },
+        {
+          "question": "最近一段时间的整体经营情况怎么样？",
+          "session_id": "preflight-http_500-1-c971a89d",
+          "status": 200,
+          "elapsed_seconds": 0.656,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（接口返回错误码 500），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0026"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "http_503",
+      "llm_requests": 4,
+      "attempts": [
+        {
+          "question": "你们的退款规则是怎么规定的？",
+          "session_id": "preflight-http_503-0-96db01e0",
+          "status": 200,
+          "elapsed_seconds": 0.609,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（接口返回错误码 503），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0027"
+          }
+        },
+        {
+          "question": "最近一段时间的整体经营情况怎么样？",
+          "session_id": "preflight-http_503-1-b80b1a47",
+          "status": 200,
+          "elapsed_seconds": 0.61,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（接口返回错误码 503），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0028"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "slow",
+      "llm_requests": 6,
+      "attempts": [
+        {
+          "question": "你们的退款规则是怎么规定的？",
+          "session_id": "preflight-slow-0-68cebec9",
+          "status": 200,
+          "elapsed_seconds": 18.234,
+          "error": null,
+          "body": {
+            "answer": "这是预检假模型的固定回答，具体数值请以工具结果为准。",
+            "answer_type": "data",
+            "citations": [],
+            "data_evidence": [
+              {
+                "tool": "query_metrics",
+                "params": {
+                  "start": "2026-06-01",
+                  "end": "2026-06-28"
+                },
+                "result": {
+                  "start": "2026-06-01",
+                  "end": "2026-06-28",
+                  "store_id": null,
+                  "product_id": null,
+                  "net_revenue": 147211.0,
+                  "refund_amount": 839.0,
+                  "orders": 4049,
+                  "aov": 36.36,
+                  "qty": 6092
+                }
+              }
+            ],
+            "trace_id": "t-20260901-0029"
+          }
+        },
+        {
+          "question": "最近一段时间的整体经营情况怎么样？",
+          "session_id": "preflight-slow-1-0f24c13c",
+          "status": 200,
+          "elapsed_seconds": 18.281,
+          "error": null,
+          "body": {
+            "answer": "这是预检假模型的固定回答，具体数值请以工具结果为准。",
+            "answer_type": "data",
+            "citations": [],
+            "data_evidence": [
+              {
+                "tool": "query_metrics",
+                "params": {
+                  "start": "2026-06-01",
+                  "end": "2026-06-28"
+                },
+                "result": {
+                  "start": "2026-06-01",
+                  "end": "2026-06-28",
+                  "store_id": null,
+                  "product_id": null,
+                  "net_revenue": 147211.0,
+                  "refund_amount": 839.0,
+                  "orders": 4049,
+                  "aov": 36.36,
+                  "qty": 6092
+                }
+              }
+            ],
+            "trace_id": "t-20260901-0030"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "hang",
+      "llm_requests": 2,
+      "attempts": [
+        {
+          "question": "你们的退款规则是怎么规定的？",
+          "session_id": "preflight-hang-0-8b4ffda1",
+          "status": 200,
+          "elapsed_seconds": 120.063,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（调用超时），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0031"
+          }
+        },
+        {
+          "question": "最近一段时间的整体经营情况怎么样？",
+          "session_id": "preflight-hang-1-8ed71142",
+          "status": 200,
+          "elapsed_seconds": 120.062,
+          "error": null,
+          "body": {
+            "answer": "模型服务这次没有正常返回（调用超时），为了不给出没有依据的数字，这个问题先不回答。可以稍后重试；失败的真实原因记在 trace 里。",
+            "answer_type": "refusal",
+            "citations": [],
+            "data_evidence": [],
+            "trace_id": "t-20260901-0032"
+          }
+        }
+      ]
+    }
+  ],
+  "startup_requests": 0
+}
