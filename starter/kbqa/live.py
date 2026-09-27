@@ -8,6 +8,8 @@ import time
 from typing import Any, Callable, Optional
 
 from .answerer import Answerer
+from .docfacts import carries
+from .entities import focus_kinds
 from .schemas import Answer
 from .llm import LLMClient, LLMError
 from .planner import Plan
@@ -34,6 +36,36 @@ _TOOL_CALL_NUDGE = (
     "要查数据、检索知识库就正常调用工具；要给出结论就直接写中文回答。"
     "两种都可以，但不要再把尖括号标记写进正文。"
 )
+
+
+def _retrieved_doc_ids(retrieved: Optional[dict]) -> list[str]:
+    """本轮 search_kb 真正返回过的文档编号，按出现顺序去重。
+
+    这是"模型这一轮看过哪些资料"的记录，比它自己标的编号全。
+    """
+    ids: list[str] = []
+    for payload in (retrieved or {}).values():
+        for item in payload or []:
+            doc_id = item.get("doc_id") if isinstance(item, dict) else None
+            if doc_id and doc_id not in ids:
+                ids.append(doc_id)
+    return ids
+
+
+#: 这些焦点对应的答案长一个有形的数值（金额、时点、时长、件数），
+#: 是可以"在文档里指出哪一句写着它"的。reason / rule / entity 不行——
+#: 一篇文档里到处都有商品名和因果句，用它们来挑文档等于没筛。
+_VALUE_KINDS = frozenset({"money", "clock", "duration", "count", "value"})
+
+
+def _numeric_kinds(*texts: str) -> list[str]:
+    """这几句话要的数值是哪几类，按出现顺序去重。"""
+    kinds: list[str] = []
+    for text in texts:
+        for kind in focus_kinds(text or ""):
+            if kind in _VALUE_KINDS and kind not in kinds:
+                kinds.append(kind)
+    return kinds
 
 
 def _strip_raw_tool_calls(text: str) -> str:
@@ -252,7 +284,7 @@ class LiveEngine:
         text = _DOC_MARK.sub("", content).strip()
         # 兜底：万一工具调用标记还是漏到了这里，剥掉再往外给。
         text = _strip_raw_tool_calls(text)
-        citations = self._citations(plan, doc_ids, history)
+        citations = self._citations(plan, doc_ids, history, retrieved)
         evidence = self._trim_evidence(evidence, plan)
         allowed = self._allowed_numbers(plan, evidence, citations)
         bad = [value for value in _numbers_in(text) if not _matches(value, allowed)]
@@ -427,17 +459,77 @@ class LiveEngine:
                 queries.append(previous)
         return queries
 
-    def _citations(self, plan: Plan, doc_ids: list[str], history: Optional[list[dict]] = None) -> list[dict]:
+    def _value_citation_doc(self, queries: list[str], doc_ids: list[str]) -> Optional[str]:
+        """问数值类问题却没标出处时，从候选文档里挑出真正写着数值的那一篇。
+
+        挑法分两步：
+        1. 每篇都用 require_value 挑一遍带数字的句子，谁挑出来的分最高就选谁；
+        2. 一篇都挑不出来时（中文问句撞上英文邮件，词面完全不重叠，按词打分全为 0），
+           退一步只看"这篇里有没有写着问句要的那种数值的句子"——问金额就找带金额的，
+           问时长就找带时长的。这不是相关性判断，是"这个数只有这篇里有"的事实判断。
+        两步都落空就返回 None，宁可没有引用也不要硬塞一篇不相干的。
+        """
+        best: Optional[str] = None
+        best_score = 0.0
+        for doc_id in doc_ids[:5]:
+            if doc_id not in self.answerer.retriever.index.docs_meta:
+                continue
+            for query in queries:
+                ranked = self.answerer.facts.rank(query, doc_id, 1, require_value=True)
+                if ranked and ranked[0][0] > best_score:
+                    best, best_score = doc_id, ranked[0][0]
+                    break
+        if best:
+            return best
+        kinds = _numeric_kinds(*queries)
+        if not kinds:
+            return None
+        for doc_id in doc_ids[:5]:
+            if doc_id not in self.answerer.retriever.index.docs_meta:
+                continue
+            if self._carries_value(doc_id, kinds):
+                return doc_id
+        return None
+
+    def _carries_value(self, doc_id: str, kinds: list[str]) -> bool:
+        """这篇文档里有没有一句写着问句要的那种数值。"""
+        if not kinds:
+            return True
+        for unit in self.answerer.facts.units(doc_id):
+            if any(carries(kind, unit.text) for kind in kinds):
+                return True
+        return False
+
+    def _citations(
+        self,
+        plan: Plan,
+        doc_ids: list[str],
+        history: Optional[list[dict]] = None,
+        retrieved: Optional[dict] = None,
+    ) -> list[dict]:
         """引用由代码生成：从模型点名的文档里挑最相关的一句原文，保证逐字可核对。
 
         问“赔了多少”“目标多少”“毛利率多少”这类带数的问题时，优先挑**带数字**的那一句：
         挑出来的句子会原样进 `quote`，而评测核对事实时会连 quote 一起看。
         挑不到带数字的再退回按相关度挑，不至于引不上有内容的原文。
         """
-        wants_value = _wants_value(plan.standalone or plan.question)
         question = plan.standalone or plan.question
+        wants_value = _wants_value(question)
+        queries = self._citation_queries(plan, history)
+        kinds = _numeric_kinds(*queries) if wants_value else []
+        value_doc: Optional[str] = None
         if not doc_ids:
             doc_ids = self._citation_fallback(plan, history)
+        if wants_value and retrieved:
+            # 要数值的问题，手上这些文档里一句带数值的都没有时，换一篇来引。
+            # T02 第 3 轮"供应商后来赔了多少"：继承上一轮的是停售通知 KB-021，
+            # 里面只写了"详见供应商邮件 KB-022"，没有金额；钱在 KB-022 里。
+            # 不换的话，写着 8,600 的那句会因为出处不在允许清单里被数字核对删掉。
+            if not any(self._carries_value(doc_id, kinds) for doc_id in doc_ids):
+                picked = self._value_citation_doc(queries, _retrieved_doc_ids(retrieved))
+                if picked:
+                    doc_ids = [picked]
+                    value_doc = picked
         seen: list[str] = []
         for doc_id in doc_ids:
             # 版本择优：问"现在/今年"时，引到归档或已废止的那版就是引错了。
@@ -446,12 +538,13 @@ class LiveEngine:
             canonical = self._canonical_doc(doc_id, question)
             if canonical not in seen:
                 seen.append(canonical)
-        queries = self._citation_queries(plan, history)
         citations = []
         for doc_id in seen[:3]:
             if doc_id not in self.answerer.retriever.index.docs_meta:
                 continue
-            ranked = self._rank_citation(doc_id, queries, wants_value)
+            ranked = self._rank_citation(
+                doc_id, queries, wants_value, allow_value_fallback=(doc_id in (value_doc,))
+            )
             if not ranked:
                 continue
             citation = self.answerer.facts.cite(doc_id, ranked[0][1].text)
@@ -459,7 +552,9 @@ class LiveEngine:
                 citations.append(citation)
         return citations
 
-    def _rank_citation(self, doc_id: str, queries: list[str], wants_value: bool):
+    def _rank_citation(
+        self, doc_id: str, queries: list[str], wants_value: bool, allow_value_fallback: bool = False
+    ):
         """按候选检索词逐个试，挑最先能挑出句子的那个。"""
         facts = self.answerer.facts
         for query in queries:
@@ -470,6 +565,13 @@ class LiveEngine:
             ranked = facts.rank(query, doc_id, 1)
             if ranked:
                 return ranked
+        if allow_value_fallback:
+            # 词面完全不重叠时（中文问句 vs 英文邮件），上面每一步都是 0 分。
+            # 这篇既然是"因为里面写着这个数"才被选中的，就直接引写着它的那一句。
+            kinds = _numeric_kinds(*queries)
+            for unit in facts.units(doc_id):
+                if any(carries(kind, unit.text) for kind in kinds):
+                    return [(0.5, unit)]
         return []
 
     def _canonical_doc(self, doc_id: str, question: str) -> str:
