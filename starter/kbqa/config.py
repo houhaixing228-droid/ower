@@ -14,6 +14,26 @@ DEFAULT_TODAY = "2026-09-01"
 PACKAGE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = PACKAGE_DIR.parent
 
+#: 开发时可以把 `.env.example` 复制成 `.env` 填自己的 Key（不入库）。
+#: **环境变量优先**：评审时他们用环境变量传 DeepSeek 的 Key，这里不会覆盖它们。
+DOT_ENV = PROJECT_DIR / ".env"
+
+
+def load_dot_env(path: Path = DOT_ENV) -> None:
+    """读 `.env` 里尚未在环境中设置的项。极简实现，不引第三方依赖。"""
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if key and key not in os.environ:
+            os.environ[key] = value.strip().strip("'\"")
+
 
 def _default_workspace() -> Path:
     """data/ 与 knowledge_base/ 在本项目的上一层。"""
@@ -61,6 +81,7 @@ class Settings:
 
 
 def load_settings() -> Settings:
+    load_dot_env()
     workspace = _default_workspace()
     return Settings(
         data_dir=_path_from_env("DATA_DIR", workspace / "data"),

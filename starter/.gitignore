@@ -3,3 +3,10 @@ var/
 __pycache__/
 *.pyc
 .pytest_cache/
+.cache/
+# Key 不入库：开发时把 .env.example 复制成 .env 再填
+.env
+.env.local
+*.key
+# 调试代理的请求日志与评测报告
+llm_traffic.jsonl

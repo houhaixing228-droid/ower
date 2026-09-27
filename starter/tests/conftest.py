@@ -24,8 +24,10 @@ FAKE_TEXT = "退款政策 v2 > 三、时限：外卖订单在订单送达后 24 
 @pytest.fixture()
 def client(monkeypatch, tmp_path_factory):
     os.environ["VAR_DIR"] = str(tmp_path_factory.mktemp("var"))
+    # 显式置空而不是删除：`load_dot_env` 只补环境里没有的项，
+    # 本机 .env 里有 Key 时，删掉变量反而会让 .env 生效，测试就跑成 live 了。
     for key in ("LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL"):
-        os.environ.pop(key, None)
+        os.environ[key] = ""
 
     from fastapi.testclient import TestClient
 
