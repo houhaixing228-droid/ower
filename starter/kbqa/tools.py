@@ -9,7 +9,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any, Optional
 
-from .cleaning import open_readonly
+from .cleaning import normalise_id, open_readonly
 
 METRIC_FIELDS = ("net_revenue", "refund_amount", "orders", "aov", "qty")
 
@@ -50,14 +50,19 @@ class DataTools:
             self._local.conn = None
 
     def _where(self, start: str, end: str, store_id=None, product_id=None) -> tuple[str, list]:
-        clause = ["date >= ?", "date < ?"]
+        """契约 §2：start/end 是闭区间，所以这里必须是 `date <= end`。
+
+        门店、商品编号按 KB-001 §2.1 先规范化（去空白转大写）再比较，
+        这样 ` s02` 这种可恢复写法进得来，`S99` 这种脏外键查不到（它本来也没入库）。
+        """
+        clause = ["date >= ?", "date <= ?"]
         params: list[Any] = [start, end]
         if store_id:
             clause.append("store_id = ?")
-            params.append(store_id.strip().upper())
+            params.append(normalise_id(store_id))
         if product_id:
             clause.append("product_id = ?")
-            params.append(product_id.strip().upper())
+            params.append(normalise_id(product_id))
         return " AND ".join(clause), params
 
     # -- 元信息 -----------------------------------------------------------------
@@ -91,16 +96,23 @@ class DataTools:
     # -- 指标 -------------------------------------------------------------------
 
     def query_metrics(self, start: str, end: str, store_id=None, product_id=None) -> dict:
-        """营业额、退款、订单数、客单价、销量。客单价 = 营业额 ÷ 明细行数。"""
+        """KB-001 §4 的五个指标：净营业额、退款金额、有效订单数、客单价、销量。
+
+        - 净营业额 = 销售行金额 + 退款行金额（退款行本身是负数，实际效果是减）。
+          所以在清洗阶段保留退款行，这里整段相加，不额外剔除。
+        - 退款金额 = 退款行金额之和的绝对值。
+        - 有效订单数 = 销售行里不同 order_id 的个数，多行订单只算 1 单，退款行不计。
+        - 客单价 = 净营业额 ÷ 有效订单数（不是 ÷ 明细行数）。
+        - 销量 = 销售行数量 - 退款行数量。
+        """
         where, params = self._where(start, end, store_id, product_id)
-        # 退款行不是营业，直接排掉，省得把营业额算少了。
         row = self.conn.execute(
             """
             SELECT COALESCE(SUM(amount_cents), 0),
-                   0,
-                   COUNT(*),
-                   COALESCE(SUM(qty), 0)
-            FROM sales_clean WHERE %s AND is_refund = 0
+                   COALESCE(SUM(CASE WHEN is_refund = 1 THEN amount_cents ELSE 0 END), 0),
+                   COUNT(DISTINCT CASE WHEN is_refund = 0 THEN order_id END),
+                   COALESCE(SUM(CASE WHEN is_refund = 1 THEN -qty ELSE qty END), 0)
+            FROM sales_clean WHERE %s
             """
             % where,
             params,
@@ -120,7 +132,10 @@ class DataTools:
         }
 
     def daily_metrics(self, start: str, end: str, store_id=None, product_id=None) -> dict:
-        """区间内每一天都要有一条记录，没有营业额的日期也要出现。"""
+        """区间内每一天都要有一条记录，没有营业额的日期也要出现。
+
+        契约 §3 要求闭区间内的每一天都在；没有数据那天数值为 0、`aov` 为 null。
+        """
         where, params = self._where(start, end, store_id, product_id)
         rows = self.conn.execute(
             """
