@@ -241,6 +241,11 @@ class LiveEngine:
                 trace.step("tool", {"tool": name, "params": params}, started=started)
                 if name == "search_kb":
                     retrieved[json.dumps(params, ensure_ascii=False)] = result.get("results", [])
+                    # 第四关：把"检索到哪些片段、各自多少分、哪些被版本过滤掉"也记进 trace。
+                    # mock 路径（answerer.py）一直记着这一步，live 这边原来漏了，
+                    # 于是前端的检索面板在 live 模式下永远是空的。
+                    if result.get("trace"):
+                        trace.step("search", result["trace"])
                 elif "error" not in result:
                     evidence.append(
                         {"tool": name, "params": params, "result": _compact_result(result, plan)}
@@ -250,7 +255,9 @@ class LiveEngine:
                     {
                         "role": "tool",
                         "tool_call_id": call.get("id"),
-                        "content": json.dumps(_compact_result(result, plan), ensure_ascii=False)[:6000],
+                        "content": json.dumps(
+                            _compact_result(_without_debug_fields(result), plan), ensure_ascii=False
+                        )[:6000],
                     }
                 )
             if round_bad:
@@ -807,6 +814,21 @@ def _answer_type(evidence: list[dict], citations: list[dict]) -> str:
     if citations:
         return "doc"
     return "refusal"
+
+
+#: 只给调试面板看的字段。它们进 trace，但不进模型上下文。
+_DEBUG_ONLY_KEYS = ("trace",)
+
+
+def _without_debug_fields(result: Any) -> Any:
+    """摘掉只给调试面板看的字段，剩下的才是模型该看到的东西。
+
+    第四关的调试面板要"检索到哪些片段、各自多少分"，这些信息随 `search_kb` 的结果回来，
+    但模型不需要看分数——那份分数是给调试的人判断排序对不对用的，塞进上下文只会白占额度。
+    """
+    if not isinstance(result, dict) or not any(key in result for key in _DEBUG_ONLY_KEYS):
+        return result
+    return {key: value for key, value in result.items() if key not in _DEBUG_ONLY_KEYS}
 
 
 def _compact_result(result: dict, plan=None, max_days: int = 14) -> dict:

@@ -94,10 +94,18 @@ class Service:
         """契约 §4：片段够就恰好给 top_k 条，不够才少给。
 
         `top_k` 大于索引里的片段总数时按总数封顶——这正是契约允许少给的那种情况。
+
+        返回值里多带一个 `trace`：每个片段多少分、哪些被版本元数据过滤掉了、覆盖率多少。
+        这是第四关调试面板的数据来源。两个边界：
+        `/api/retrieve` 会把它剥掉再返回（契约 §4 只有 `results`），
+        发给模型的工具结果也不会带上它（见 `live._without_debug_fields`）。
         """
         wanted = max(1, min(int(top_k or 5), len(self.index.chunks) or 1))
         result = self.retriever.search(query or "", top_k=wanted)
-        return {"results": [hit.as_result() for hit in result.hits]}
+        return {
+            "results": [hit.as_result() for hit in result.hits],
+            "trace": result.as_trace(),
+        }
 
     def _kb_view(self, item: dict) -> dict:
         """给模型看的检索结果：除了正文，还要带上它判断版本用得着的东西。
@@ -183,7 +191,16 @@ class Service:
             "data_evidence": answer.data_evidence,
             "trace_id": trace.trace_id,
         }
-        trace.step("response", {"answer_type": answer.answer_type, "notes": answer.notes})
+        # 第四关：写明这次实际用了哪几篇文档。面板据此把"检索到"和"采用"分开——
+        # 排查时最常问的一句话就是"第 2 片明明检索到了，为什么没用上"。
+        trace.step(
+            "response",
+            {
+                "answer_type": answer.answer_type,
+                "notes": answer.notes,
+                "citations": [item.get("doc_id") for item in answer.citations],
+            },
+        )
         self.traces.save(trace)
         return payload
 

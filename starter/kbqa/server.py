@@ -93,7 +93,13 @@ def metrics_daily(
 
 @app.post("/api/retrieve")
 def retrieve(request: RetrieveRequest) -> dict:
-    return service().retrieve(_as_text(request.query), request.top_k)
+    """契约 §4：响应只有 `results`。
+
+    `service().retrieve()` 多带一个 `trace`（每个片段多少分、哪些被版本过滤掉），
+    那是第四关调试面板要用的，属于内部字段，不出这个接口。
+    """
+    payload = service().retrieve(_as_text(request.query), request.top_k)
+    return {"results": payload["results"]}
 
 
 @app.post("/api/chat")
